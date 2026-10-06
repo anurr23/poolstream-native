@@ -1,5 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
   <rect width="200" height="200" rx="20" fill="#dcfce7"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35A;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Sosis Goreng</text>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <ellipse cx="100" cy="106" rx="62" ry="42" fill="#f1f5f9"/>  <ellipse cx="100" cy="106" rx="50" ry="32" fill="#fff"/>
+  <rect x="76" y="96" width="34" height="14" rx="7" fill="#dc2626" transform="rotate(-12 93 103)"/>
+  <rect x="96" y="102" width="34" height="14" rx="7" fill="#ef4444" transform="rotate(8 113 109)"/>
+  <line x1="84" y1="98" x2="84" y2="108" stroke="#991b1b" stroke-width="2"/>
+  <line x1="92" y1="97" x2="92" y2="107" stroke="#991b1b" stroke-width="2"/>
+  <line x1="110" y1="104" x2="110" y2="114" stroke="#991b1b" stroke-width="2"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Sosis Goreng</text>
 </svg>

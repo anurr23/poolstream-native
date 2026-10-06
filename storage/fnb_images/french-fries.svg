@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <rect width="200" height="200" rx="20" fill="#fce7f3"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35F;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#db2777">French Fries</text>
+  <rect width="200" height="200" rx="20" fill="#ffedd5"/>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <rect x="78" y="44" width="9" height="34" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <rect x="86" y="36" width="9" height="42" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <rect x="94" y="28" width="9" height="50" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <rect x="102" y="44" width="9" height="34" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <rect x="110" y="36" width="9" height="42" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <rect x="118" y="28" width="9" height="50" rx="2" fill="#fbbf24" stroke="#d97706" stroke-width="1"/>
+  <path d="M68 78 L132 78 L124 146 L76 146 Z" fill="#f59e0b"/>
+  <rect x="68" y="78" width="64" height="16" fill="#ffffff" opacity="0.25"/>
+  <circle cx="100" cy="116" r="14" fill="#fff" opacity="0.9"/><text x="100" y="121" text-anchor="middle" font-size="14" font-weight="bold" fill="#f59e0b">F</text>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#c2410c">French Fries</text>
 </svg>

@@ -1,5 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <rect width="200" height="200" rx="20" fill="#fce7f3"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35F;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#db2777">Roti Bakar</text>
+  <rect width="200" height="200" rx="20" fill="#ffedd5"/>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <ellipse cx="100" cy="106" rx="62" ry="42" fill="#f1f5f9"/>  <ellipse cx="100" cy="106" rx="50" ry="32" fill="#fff"/>
+  <path d="M70 116 L100 78 L100 116 Z" fill="#d99a4e" stroke="#92400e" stroke-width="2"/>
+  <path d="M100 116 L130 78 L130 116 Z" fill="#b45309" stroke="#92400e" stroke-width="2"/>
+  <line x1="78" y1="104" x2="94" y2="104" stroke="#78350f" stroke-width="3" stroke-linecap="round"/>
+  <line x1="108" y1="104" x2="122" y2="104" stroke="#451a03" stroke-width="3" stroke-linecap="round"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#c2410c">Roti Bakar</text>
 </svg>

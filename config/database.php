@@ -1,17 +1,17 @@
 <?php
 class Database {
-    private $host = '172.17.0.4';
+    private $host = 'mysql';
     private $port = '3306';
     private $db_name = 'billiard';
     private $username = 'root';
-    private $password = 'root123';
+    private $password = 'root';
     private $conn;
 
     public function getConnection() {
         $this->conn = null;
 
         // Coba koneksi host container, jika gagal fallback ke 127.0.0.1
-        $hosts = [$this->host, '127.0.0.1', 'localhost'];
+        $hosts = [$this->host, '172.17.0.2', 'host.docker.internal', '127.0.0.1'];
 
         foreach ($hosts as $h) {
             try {

@@ -1,5 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <rect width="200" height="200" rx="20" fill="#fce7f3"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35F;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#db2777">Nugget Goreng</text>
+  <rect width="200" height="200" rx="20" fill="#ffedd5"/>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <path d="M62 92 L138 92 L130 146 L70 146 Z" fill="#b45309"/>
+  <line x1="72" y1="92" x2="68" y2="146" stroke="#00000033" stroke-width="3"/>
+  <line x1="86" y1="92" x2="82" y2="146" stroke="#00000033" stroke-width="3"/>
+  <line x1="100" y1="92" x2="96" y2="146" stroke="#00000033" stroke-width="3"/>
+  <line x1="114" y1="92" x2="110" y2="146" stroke="#00000033" stroke-width="3"/>
+  <line x1="128" y1="92" x2="124" y2="146" stroke="#00000033" stroke-width="3"/>
+  <rect x="58" y="86" width="84" height="10" rx="5" fill="#78350f"/>
+
+  <rect x="76" y="66" width="22" height="18" rx="8" fill="#fbbf24" stroke="#b45309" stroke-width="2"/>
+  <rect x="100" y="60" width="22" height="18" rx="8" fill="#f59e0b" stroke="#b45309" stroke-width="2"/>
+  <rect x="88" y="74" width="22" height="18" rx="8" fill="#fbbf24" stroke="#b45309" stroke-width="2"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#c2410c">Nugget Goreng</text>
 </svg>

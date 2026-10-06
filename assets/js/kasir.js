@@ -366,10 +366,10 @@ function renderNewOrderCatalog() {
     }
 
     grid.innerHTML = items.map(item => {
-        const imgSrc = item.image_path ? item.image_path : 'assets/images/fnb_default.png';
+        const imgSrc = item.image_url || (item.image_path ? 'storage/' + item.image_path : 'assets/images/fnb_default.png');
         return `
             <div class="fnb-mini-card" onclick="addDraftItem(${item.id})">
-                <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(item.name)}" onerror="this.src='images/logo.png'">
+                <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(item.name)}" onerror="this.src='assets/images/logo.png'">
                 <div class="fnb-mini-info">
                     <div class="name">${escapeHtml(item.name)}</div>
                     <div class="price">${formatRupiah(item.price)}</div>
@@ -682,10 +682,10 @@ function renderDetailCatalogGrid() {
     }
 
     grid.innerHTML = items.map(item => {
-        const imgSrc = item.image_path ? item.image_path : 'assets/images/fnb_default.png';
+        const imgSrc = item.image_url || (item.image_path ? 'storage/' + item.image_path : 'assets/images/fnb_default.png');
         return `
             <div class="fnb-mini-card" onclick="addOrderItemToActive(${item.id})">
-                <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(item.name)}" onerror="this.src='images/logo.png'">
+                <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(item.name)}" onerror="this.src='assets/images/logo.png'">
                 <div class="fnb-mini-info">
                     <div class="name">${escapeHtml(item.name)}</div>
                     <div class="price">${formatRupiah(item.price)}</div>

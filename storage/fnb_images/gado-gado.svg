@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
   <rect width="200" height="200" rx="20" fill="#dcfce7"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35A;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Gado-gado</text>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <ellipse cx="100" cy="106" rx="62" ry="42" fill="#f1f5f9"/>  <ellipse cx="100" cy="106" rx="50" ry="32" fill="#fef9c3"/>
+  <circle cx="88" cy="100" r="8" fill="#22c55e"/>
+  <circle cx="104" cy="96" r="8" fill="#16a34a"/>
+  <circle cx="114" cy="108" r="7" fill="#86efac"/>
+  <ellipse cx="96" cy="110" rx="9" ry="6" fill="#fff"/>
+  <path d="M76 104 q24 12 48 4" stroke="#92400e" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <circle cx="100" cy="90" r="5" fill="#fbbf24"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Gado-gado</text>
 </svg>

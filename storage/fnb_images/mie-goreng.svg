@@ -1,5 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
   <rect width="200" height="200" rx="20" fill="#dcfce7"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35A;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Mie Goreng</text>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <ellipse cx="100" cy="112" rx="58" ry="38" fill="#1e3a5f"/>
+  <ellipse cx="100" cy="106" rx="50" ry="30" fill="#0f2440"/>
+  <path d="M62 100 q10 -10 20 0 t20 0 t20 0 t20 0" stroke="#d99a4e" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M66 110 q10 -10 20 0 t20 0 t20 0 t16 0" stroke="#c07f2e" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <circle cx="118" cy="96" r="7" fill="#22c55e"/>
+  <circle cx="82" cy="94" r="5" fill="#ef4444"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#16a34a">Mie Goreng</text>
 </svg>

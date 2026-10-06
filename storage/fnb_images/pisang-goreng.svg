@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-  <rect width="200" height="200" rx="20" fill="#fce7f3"/>
-  <text x="100" y="95" text-anchor="middle" dominant-baseline="central" font-size="64">&#x1F35F;</text>
-  <text x="100" y="155" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#db2777">Pisang Goreng</text>
+  <rect width="200" height="200" rx="20" fill="#ffedd5"/>
+  <ellipse cx="100" cy="148" rx="52" ry="10" fill="#000" opacity="0.08"/>
+  <ellipse cx="100" cy="106" rx="62" ry="42" fill="#f1f5f9"/>  <ellipse cx="100" cy="106" rx="50" ry="32" fill="#fff"/>
+  <ellipse cx="88" cy="106" rx="20" ry="12" fill="#eab308" stroke="#a16207" stroke-width="2" transform="rotate(-15 88 106)"/>
+  <ellipse cx="112" cy="100" rx="20" ry="12" fill="#facc15" stroke="#a16207" stroke-width="2" transform="rotate(12 112 100)"/>
+  <ellipse cx="100" cy="114" rx="22" ry="11" fill="#eab308" stroke="#a16207" stroke-width="2"/>
+  <text x="100" y="176" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="600" fill="#c2410c">Pisang Goreng</text>
 </svg>
