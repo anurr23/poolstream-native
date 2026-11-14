@@ -276,55 +276,57 @@ try {
             <!-- 2. 3 Main Menu Cards Section -->
             <section class="menu-cards-section mb-4">
                 <div class="row g-4">
-                    <!-- 1. Menu Admin -->
+                    <!-- 1. Menu Admin / Laporan Keuangan (Hanya untuk Admin) -->
+                    <?php if ($user_role === 'admin'): ?>
                     <div class="col-12 col-md-6 col-lg-4 d-flex">
-                        <a href="admin.php" class="menu-card card-admin w-100">
+                        <a href="laporan.php" class="menu-card card-admin w-100">
                             <div class="menu-card-header">
                                 <span class="card-category-tag">
-                                    <span class="pulse-dot pulse-indigo"></span> MANAJEMEN SISTEM
+                                    <span class="pulse-dot pulse-indigo"></span> KEUANGAN & LAPORAN
                                 </span>
-                                <span class="badge-count badge-count--indigo"><?php echo ($user_role === 'admin') ? 'Superuser' : 'Terbatas'; ?></span>
+                                <span class="badge-count badge-count--indigo">Admin Only</span>
                             </div>
 
                             <div class="card-hero-row">
                                 <div class="card-icon-bubble">
-                                    <i class="bi bi-shield-lock-fill"></i>
+                                    <i class="bi bi-file-earmark-bar-graph-fill"></i>
                                 </div>
                                 <div class="card-title-group">
-                                    <h2 class="menu-card-title">Admin Panel</h2>
-                                    <span class="card-subheading">Kontrol Master & Konfigurasi</span>
+                                    <h2 class="menu-card-title">Laporan Keuangan</h2>
+                                    <span class="card-subheading">Omset Biliar & FnB</span>
                                 </div>
                             </div>
 
                             <p class="menu-card-desc">
-                                Kelola data pengguna, hak akses, laporan omset terpadu, tarif sewa paket, serta sinkronisasi hardware relay multi-channel.
+                                Cek rekapitulasi omset harian/bulanan, pendapatan sewa meja biliar, penjualan FnB, dan detail riwayat transaksi sukses.
                             </p>
 
                             <!-- Capability Chips -->
                             <div class="card-chips-row">
-                                <span class="card-chip"><i class="bi bi-sliders2"></i> Relay 16-Ch</span>
-                                <span class="card-chip"><i class="bi bi-tags-fill"></i> Kelola Tarif</span>
-                                <span class="card-chip"><i class="bi bi-bar-chart-line-fill"></i> Laporan Omset</span>
+                                <span class="card-chip"><i class="bi bi-cash-stack"></i> Rekap Omset</span>
+                                <span class="card-chip"><i class="bi bi-calendar-range"></i> Filter Periode</span>
+                                <span class="card-chip"><i class="bi bi-receipt"></i> Rincian Nota</span>
                             </div>
 
                             <!-- Live Status Metric Strip -->
                             <div class="card-metric-strip">
                                 <div class="metric-item">
-                                    <span class="metric-label">Status Sistem</span>
-                                    <span class="metric-value text-success"><i class="bi bi-check-circle-fill"></i> Terhubung</span>
+                                    <span class="metric-label">Status Laporan</span>
+                                    <span class="metric-value text-success"><i class="bi bi-check-circle-fill"></i> Realtime Sync</span>
                                 </div>
                                 <div class="metric-item">
-                                    <span class="metric-label">Peran Pengguna</span>
-                                    <span class="metric-value"><?php echo strtoupper(htmlspecialchars($user_role)); ?></span>
+                                    <span class="metric-label">Akses Role</span>
+                                    <span class="metric-value">ADMIN</span>
                                 </div>
                             </div>
 
                             <div class="card-btn-cta">
-                                <span>Akses Panel Admin</span>
+                                <span>Buka Laporan Keuangan</span>
                                 <i class="bi bi-arrow-right"></i>
                             </div>
                         </a>
                     </div>
+                    <?php endif; ?>
 
                     <!-- 2. Menu Meja -> Navigasi ke meja.php -->
                     <div class="col-12 col-md-6 col-lg-4 d-flex">
@@ -361,7 +363,7 @@ try {
                                     <span class="occupancy-rate"><?php echo $occupancy_pct; ?>% Terisi</span>
                                 </div>
                                 <div class="occupancy-bar-track">
-                                    <div class="occupancy-bar-fill" style="width: <?php echo max(6, $occupancy_pct); ?>%;"></div>
+                                    <div class="occupancy-bar-fill" style="width: <?php echo $occupancy_pct; ?>%;"></div>
                                 </div>
                             </div>
 
@@ -501,10 +503,10 @@ try {
                                         <span class="shortcut-sub">Checkout & struk</span>
                                     </div>
                                 </a>
-                                <a href="admin.php" class="shortcut-btn">
+                                <a href="kelola-item.php" class="shortcut-btn">
                                     <div class="shortcut-icon shortcut-icon--indigo"><i class="bi bi-file-earmark-bar-graph"></i></div>
                                     <div class="shortcut-text">
-                                        <span class="shortcut-title">Laporan Keuangan</span>
+                                        <span class="shortcut-title">Tambah Meja & Menu</span>
                                         <span class="shortcut-sub">Rekap omset harian</span>
                                     </div>
                                 </a>

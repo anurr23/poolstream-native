@@ -363,13 +363,14 @@ body {
    TOP NAVBAR
    ============================================================ */
 .dashboard-nav {
-    position: relative;
-    z-index: 20;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
     padding: 14px 36px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(10, 16, 28, 0.78);
+    background: rgba(10, 16, 28, 0.92);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);

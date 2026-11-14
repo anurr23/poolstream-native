@@ -65,16 +65,21 @@ $user_role = $_SESSION['user_role'] ?? 'admin';
     </header>
 
     <!-- Controls & Filter Section -->
-    <div class="dashboard-controls px-3 px-md-4 px-xl-5">
+    <div class="dashboard-controls px-3 px-md-4 px-xl-5 align-items-center">
         <div class="filter-btn-group d-flex flex-wrap gap-2">
             <button class="bb-btn bb-btn--sm bb-btn--success filter-btn" data-filter="all">SEMUA MEJA</button>
             <button class="bb-btn bb-btn--sm bb-btn--ghost filter-btn" data-filter="active">SEDANG JALAN</button>
             <button class="bb-btn bb-btn--sm bb-btn--ghost filter-btn" data-filter="ready">KOSONG</button>
         </div>
 
-        <div>
+        <div class="d-flex align-items-center gap-3">
+            <?php if ($user_role === 'admin'): ?>
+                <button class="bb-btn bb-btn--sm bb-btn--primary" onclick="openAddTableModal()">
+                    <i class="bi bi-plus-circle-fill me-1"></i> Tambah Meja
+                </button>
+            <?php endif; ?>
             <span class="status-pill" style="margin-bottom: 0;">
-                <span class="status-dot"></span> 16 Meja Terhubung
+                <span class="status-dot"></span> <span id="tableCountLabel">Meja Terhubung</span>
             </span>
         </div>
     </div>
@@ -285,13 +290,104 @@ $user_role = $_SESSION['user_role'] ?? 'admin';
         </div>
     </div>
 
-    <!-- Client Script -->
+    <!-- ============================================================
+         MODAL: TAMBAH MEJA BARU (ADMIN ONLY)
+         ============================================================ -->
+    <div id="addTableModal" class="bb-modal-backdrop" style="display: none;">
+        <div class="bb-modal" style="max-width: 420px;">
+            <div class="bb-modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="bi bi-grid-3x3-gap-fill" style="color: #10b981; font-size: 1.3rem;"></i>
+                    <h5 style="margin: 0; font-weight: 700;">Tambah Meja Baru</h5>
+                </div>
+                <button class="modal-close-btn" onclick="closeAddTableModal()">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <div class="bb-modal-body">
+                <form id="addTableForm" onsubmit="submitAddTable(event)">
+                    <div class="form-group-custom" style="margin-bottom: 14px;">
+                        <label class="custom-label">Nama / Nomor Meja *</label>
+                        <input type="text" id="addTableName" class="custom-input" style="height: 42px; padding: 0 14px;" placeholder="Contoh: Meja 17" required>
+                    </div>
+
+                    <div class="form-group-custom" style="margin-bottom: 20px;">
+                        <label class="custom-label">Channel Relay IoT (Opsional)</label>
+                        <input type="number" id="addTableRelay" class="custom-input" style="height: 42px; padding: 0 14px;" placeholder="1 - 16" min="1" max="16">
+                    </div>
+
+                    <div class="bb-modal-footer" style="padding: 0; border: none; justify-content: space-between;">
+                        <button type="button" class="bb-btn bb-btn--ghost" onclick="closeAddTableModal()">Batal</button>
+                        <button type="submit" class="bb-btn bb-btn--success">
+                            <i class="bi bi-plus-circle-fill"></i> Tambah Meja
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
-        function setFnbCat(btn, cat, containerId, onSelect) {
-            btn.parentElement.querySelectorAll('.category-pill').forEach(p => p.classList.remove('category-pill--active'));
-            btn.classList.add('category-pill--active');
-            state.fnbCategory = cat;
-            renderFnbCatalog(containerId, onSelect);
+        const userRole = '<?php echo $user_role; ?>';
+
+        function openAddTableModal() {
+            document.getElementById('addTableName').value = '';
+            document.getElementById('addTableRelay').value = '';
+            document.getElementById('addTableModal').style.display = 'flex';
+        }
+
+        function closeAddTableModal() {
+            animateCloseModal('addTableModal');
+        }
+
+        async function submitAddTable(e) {
+            e.preventDefault();
+            const tableName = document.getElementById('addTableName').value.trim();
+            const relayChannel = document.getElementById('addTableRelay').value.trim();
+
+            if (!tableName) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'add_table');
+                formData.append('table_name', tableName);
+                if (relayChannel) formData.append('relay_channel', relayChannel);
+
+                await fetch('kelola-item.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                closeAddTableModal();
+                loadDashboardData();
+            } catch (err) {
+                console.error('Gagal menambah meja:', err);
+            }
+        }
+
+        async function deleteTableItem(tableId, tableName, status) {
+            if (status === 'active') {
+                alert('Meja sedang digunakan dalam sesi aktif dan tidak dapat dihapus.');
+                return;
+            }
+
+            if (!confirm(`Yakin ingin menghapus ${tableName}?`)) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'delete_table');
+                formData.append('table_id', tableId);
+
+                await fetch('kelola-item.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                loadDashboardData();
+            } catch (err) {
+                console.error('Gagal menghapus meja:', err);
+            }
         }
     </script>
     <!-- Bootstrap 5.3 JS Bundle -->

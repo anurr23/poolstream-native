@@ -4,9 +4,9 @@
 class Database {
     private $host = 'mysql';          // hostname service MySQL / IP container
     private $port = '3306';
-    private $db_name = 'billiard';
+    private $db_name = 'poolstream';
     private $username = 'root';
-    private $password = 'root';       // ganti sesuai device
+    private $password = '';       // ganti sesuai device
     private $conn;
 
     public function getConnection() {

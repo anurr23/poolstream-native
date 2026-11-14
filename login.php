@@ -32,7 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     setcookie('poolstream_remember', $user->username, time() + (86400 * 30), "/");
                 }
 
-                header('Location: dashboard.php');
+                // Redirect sesuai role: customer ke index.php, admin/kasir ke dashboard.php
+                if ($user->role === 'customer') {
+                    header('Location: index.php');
+                } else {
+                    header('Location: dashboard.php');
+                }
                 exit();
             } elseif ($auth_result === 'inactive') {
                 $error_message = 'Akun Anda telah dinonaktifkan. Silakan hubungi admin.';

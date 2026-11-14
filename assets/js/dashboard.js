@@ -57,6 +57,10 @@ async function loadDashboardData() {
             state.packages = json.data.packages;
             state.fnbItems = json.data.fnbItems;
             renderTables();
+            const countLabel = document.getElementById('tableCountLabel');
+            if (countLabel) {
+                countLabel.textContent = `${state.tables.length} Meja Terhubung`;
+            }
         }
     } catch (e) {
         console.error("Gagal memuat data meja:", e);
@@ -91,20 +95,27 @@ function renderTables() {
         const fnbCount = tx && tx.items ? tx.items.reduce((sum, i) => sum + Number(i.quantity), 0) : 0;
 
         return `
-            <div class="bb-table-card ${isActive ? 'bb-table-card--active' : ''}" onclick="onTableClick('${t.id}')">
-                <div class="table-card-header">
+            <div class="bb-table-card ${isActive ? 'bb-table-card--active' : ''}">
+                <div class="table-card-header" style="cursor: pointer;" onclick="onTableClick('${t.id}')">
                     <div class="table-name-wrapper">
                         <h4 class="table-title">${t.name}</h4>
                         <i class="bi ${isActive ? 'bi-lightbulb-fill table-bulb--on' : 'bi-lightbulb table-bulb'}" 
                            title="${isActive ? 'Lampu Menyala' : 'Lampu Mati'}"></i>
                     </div>
-                    <span class="bb-status-badge ${isActive ? 'bb-status-badge--active' : 'bb-status-badge--ready'}">
-                        <i class="bi ${isActive ? 'bi-circle-fill' : 'bi-circle'}" style="font-size: 0.45rem;"></i>
-                        ${isActive ? 'In Use' : 'Ready'}
-                    </span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="bb-status-badge ${isActive ? 'bb-status-badge--active' : 'bb-status-badge--ready'}">
+                            <i class="bi ${isActive ? 'bi-circle-fill' : 'bi-circle'}" style="font-size: 0.45rem;"></i>
+                            ${isActive ? 'In Use' : 'Ready'}
+                        </span>
+                        ${userRole === 'admin' ? `
+                            <button class="bb-btn bb-btn--ghost bb-btn--sm" style="padding: 2px 6px; color: #ef4444;" onclick="event.stopPropagation(); deleteTableItem('${t.id}', '${t.name}', '${t.status}')" title="Hapus Meja">
+                                <i class="bi bi-trash-fill"></i>
+                            </button>
+                        ` : ''}
+                    </div>
                 </div>
 
-                <div class="table-card-body">
+                <div class="table-card-body" style="cursor: pointer;" onclick="onTableClick('${t.id}')">
                     ${isActive ? `
                         <div class="timer-label">Sisa Waktu</div>
                         <div class="bb-timer" id="timer-${t.id}">00:00:00</div>

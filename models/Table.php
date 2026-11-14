@@ -75,17 +75,26 @@ class Table {
         return $tables;
     }
 
-    public function getById($id) {
-        $stmt = $this->conn->prepare("SELECT * FROM " . $this->table_name . " WHERE id = :id LIMIT 1");
-        $stmt->bindParam(':id', $id);
-        $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+    public function addTable($name, $relay_channel = null) {
+        $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x', mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000, mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff));
+        $stmt = $this->conn->prepare("INSERT INTO " . $this->table_name . " (id, name, status, relay_channel, created_at, updated_at) VALUES (:id, :name, 'ready', :relay_channel, NOW(), NOW())");
+        return $stmt->execute([
+            ':id' => $id,
+            ':name' => $name,
+            ':relay_channel' => $relay_channel
+        ]);
     }
 
-    public function updateStatus($id, $status) {
-        $stmt = $this->conn->prepare("UPDATE " . $this->table_name . " SET status = :status WHERE id = :id");
-        $stmt->bindParam(':status', $status);
-        $stmt->bindParam(':id', $id);
-        return $stmt->execute();
+    public function deleteTable($id) {
+        $stmtCheck = $this->conn->prepare("SELECT status FROM " . $this->table_name . " WHERE id = :id LIMIT 1");
+        $stmtCheck->execute([':id' => $id]);
+        $tbl = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+        if ($tbl && $tbl['status'] === 'active') {
+            throw new Exception("Meja sedang digunakan dalam sesi aktif dan tidak dapat dihapus.");
+        }
+
+        $stmt = $this->conn->prepare("DELETE FROM " . $this->table_name . " WHERE id = :id");
+        return $stmt->execute([':id' => $id]);
     }
 }

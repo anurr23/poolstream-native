@@ -17,6 +17,6 @@ if (ini_get("session.use_cookies")) {
 }
 session_destroy();
 
-// Redirect ke login
-header('Location: login.php');
+// Redirect ke index
+header('Location: index.php');
 exit();

@@ -115,6 +115,9 @@ $user_role = $_SESSION['user_role'] ?? 'kasir';
 
             <!-- Right: Search, Filter Preset & New Order CTA -->
             <div class="kasir-actions-group">
+                <a href="kelola-item.php" class="bb-btn bb-btn--sm bb-btn--success text-decoration-none">
+                    <i class="bi bi-plus-circle-fill me-1"></i> Tambah Menu FnB
+                </a>
                 <!-- Preset Filter (Only on History Tab) -->
                 <div id="historyPresetWrapper" class="dropdown d-none">
                     <button class="bb-btn bb-btn--sm bb-btn--ghost dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="presetDropdownBtn">
