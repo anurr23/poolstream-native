@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="adminBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#3b82f6" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="200" height="200" rx="36" fill="url(#adminBg)"/>
+  <circle cx="100" cy="100" r="75" fill="none" stroke="#60a5fa" stroke-width="2" stroke-opacity="0.25" stroke-dasharray="6 4"/>
+  <g filter="url(#glow)">
+    <circle cx="100" cy="72" r="28" fill="#ffffff"/>
+    <path d="M52 142 C52 112, 74 106, 100 106 C126 106, 148 112, 148 142 Z" fill="#e0e7ff"/>
+  </g>
+  <g transform="translate(116, 92)">
+    <circle cx="16" cy="16" r="18" fill="#1e1b4b" stroke="#3b82f6" stroke-width="2.5"/>
+    <path d="M16 7 L24 11 V18 C24 23 20.5 26.5 16 28 C11.5 26.5 8 23 8 18 V11 Z" fill="url(#shieldGrad)"/>
+    <path d="M13 17 L15.5 19.5 L19.5 14" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+  <rect x="58" y="160" width="84" height="24" rx="12" fill="#312e81" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="100" y="176" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="700" fill="#bfdbfe" letter-spacing="1.5">ADMIN</text>
+</svg>

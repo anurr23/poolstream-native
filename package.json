@@ -1,0 +1,24 @@
+{
+  "name": "poolstream-native",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@popperjs/core": "^2.11.8",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.2",
+    "chart.js": "^4.5.1",
+    "flatpickr": "^4.6.13",
+    "vue": "3.5.39",
+    "vue-chartjs": "^5.3.4",
+    "vue-flatpickr-component": "^12.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "sass": "^1.101.0",
+    "vite": "^8.0.0"
+  }
+}

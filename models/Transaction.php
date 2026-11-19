@@ -1,570 +1,676 @@
 <?php
-class Transaction {
-    private $conn;
+declare(strict_types=1);
 
-    public function __construct($db) {
-        $this->conn = $db;
+class Transaction
+{
+    public function __construct(private ?PDO $db = null)
+    {
+        $this->db = $db ?? db();
     }
 
-    private function controlRelay($channel, $state) {
-        if (!$channel) return;
-        $scriptPath = __DIR__ . '/../services/relay_controller.py';
-        if (!file_exists($scriptPath)) return;
-
-        // Deteksi python executable
-        $pyCmd = null;
-        foreach (['python3', 'python', 'py'] as $cmd) {
-            $check = @shell_exec("which $cmd 2>/dev/null");
-            if (!empty($check)) {
-                $pyCmd = trim($check);
-                break;
-            }
-        }
-        if (!$pyCmd) {
-            $winCheck = @shell_exec("where py 2>nul");
-            if (!empty($winCheck)) {
-                $pyCmd = 'py';
-            }
-        }
-        if (!$pyCmd) return;
-
-        $cmd = escapeshellcmd("$pyCmd " . escapeshellarg($scriptPath) . " " . escapeshellarg((string)$channel) . " " . escapeshellarg((string)$state) . " 2>&1");
-        @shell_exec($cmd);
+    public function items(int $transactionId): array
+    {
+        $rows = fetch_all(
+            "SELECT ti.*, f.name AS fnb_name, f.category AS fnb_category, f.price AS fnb_price, f.image_path AS fnb_image_path
+             FROM transaction_items ti
+             LEFT JOIN fnb_items f ON f.id = ti.fnb_item_id
+             WHERE ti.transaction_id = :id
+             ORDER BY ti.id ASC",
+            [':id' => $transactionId]
+        );
+        return array_map(static fn (array $row): array => shape_transaction_item($row), $rows);
     }
 
-    public function startSession($tableId, $userId, $customerName, $packageId, $durationHours, $items = []) {
-        // 1. Validasi Meja
-        $tblStmt = $this->conn->prepare("SELECT * FROM tables WHERE id = :id LIMIT 1");
-        $tblStmt->execute([':id' => $tableId]);
-        $table = $tblStmt->fetch(PDO::FETCH_ASSOC);
+    private function packageFor(?int $packageId): ?array
+    {
+        if (!$packageId) {
+            return null;
+        }
+        $row = fetch_one('SELECT * FROM packages WHERE id = :id LIMIT 1', [':id' => $packageId]);
+        return $row ? shape_package($row) : null;
+    }
+
+    private function tableFor(?string $tableId): ?array
+    {
+        if (!$tableId) {
+            return null;
+        }
+        $row = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tableId]);
+        return $row ? shape_table($row) : null;
+    }
+
+    private function userFor(?string $userId): ?array
+    {
+        if (!$userId) {
+            return null;
+        }
+        $row = fetch_one('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => $userId]);
+        if (!$row) {
+            return null;
+        }
+        unset($row['password'], $row['otp_code'], $row['remember_token']);
+        $row['is_active'] = (bool) $row['is_active'];
+        $row['photo_url'] = storage_url($row['photo_path']);
+        return $row;
+    }
+
+    public function shape(array $row, bool $items = true): array
+    {
+        return shape_transaction(
+            $row,
+            $this->tableFor($row['table_id'] ?? null),
+            $this->packageFor(isset($row['package_id']) ? (int) $row['package_id'] : null),
+            $this->userFor($row['user_id'] ?? null),
+            $items ? $this->items((int) $row['id']) : null
+        );
+    }
+
+    public function find(int $id): ?array
+    {
+        $row = fetch_one('SELECT * FROM transactions WHERE id = :id LIMIT 1', [':id' => $id]);
+        return $row ? $this->shape($row) : null;
+    }
+
+    public function activeForTable(string $tableId): ?array
+    {
+        $row = fetch_one(
+            "SELECT * FROM transactions WHERE table_id = :table_id AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+            [':table_id' => $tableId]
+        );
+        return $row ? $this->shape($row) : null;
+    }
+
+    public function upcomingBookings(): array
+    {
+        $rows = fetch_all(
+            "SELECT * FROM transactions
+             WHERE type = 'billiard' AND status = 'booked' AND expected_end_time >= NOW()
+             ORDER BY start_time ASC"
+        );
+        return array_map(fn (array $row): array => $this->shape($row, false), $rows);
+    }
+
+    public function bookingsForUser(string $userId, int $limit = 100): array
+    {
+        $rows = fetch_all(
+            "SELECT * FROM transactions
+             WHERE user_id = :user_id AND type = 'billiard'
+             ORDER BY start_time DESC LIMIT {$limit}",
+            [':user_id' => $userId]
+        );
+        return array_map(fn (array $row): array => $this->shape($row), $rows);
+    }
+
+    public function nextForUser(string $userId): ?array
+    {
+        $row = fetch_one(
+            "SELECT * FROM transactions
+             WHERE user_id = :user_id AND type = 'billiard' AND status IN ('booked','active')
+               AND (status = 'active' OR expected_end_time >= NOW())
+             ORDER BY start_time ASC LIMIT 1",
+            [':user_id' => $userId]
+        );
+        return $row ? $this->shape($row) : null;
+    }
+
+    public function busyTableIds(string $start, string $end): array
+    {
+        $rows = fetch_all(
+            "SELECT DISTINCT table_id FROM transactions
+             WHERE type = 'billiard' AND status IN ('active','booked')
+               AND start_time < :end
+               AND (expected_end_time IS NULL OR expected_end_time > :start)",
+            [':start' => $start, ':end' => $end]
+        );
+        return array_values(array_filter(array_map(static fn (array $row): ?string => $row['table_id'], $rows)));
+    }
+
+    public function startSession(string $tableId, ?string $userId, string $customerName, int $packageId, float $durationHours, array $items = []): array
+    {
+        $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tableId]);
         if (!$table) {
-            throw new Exception("Meja tidak ditemukan.");
+            throw new RuntimeException('Meja tidak ditemukan.');
         }
 
-        // 2. Validasi Paket
-        $pkgStmt = $this->conn->prepare("SELECT * FROM packages WHERE id = :id LIMIT 1");
-        $pkgStmt->execute([':id' => $packageId]);
-        $package = $pkgStmt->fetch(PDO::FETCH_ASSOC);
+        $package = fetch_one('SELECT * FROM packages WHERE id = :id LIMIT 1', [':id' => $packageId]);
         if (!$package) {
-            throw new Exception("Paket tidak valid.");
+            throw new RuntimeException('Paket tidak valid.');
         }
 
-        // 3. Hitung Waktu dan Biaya Sewa
-        $now = new DateTime();
-        $startTime = $now->format('Y-m-d H:i:s');
-        $expectedMinutes = round($durationHours * 60);
-        $endTimeObj = clone $now;
-        $endTimeObj->modify("+{$expectedMinutes} minutes");
-        $expectedEndTime = $endTimeObj->format('Y-m-d H:i:s');
+        $start = now();
+        $minutes = (int) round($durationHours * 60);
+        $end = date('Y-m-d H:i:s', strtotime($start . ' +' . $minutes . ' minutes'));
 
-        $billiardCost = $package['price'] * $durationHours;
-        $fnbCost = 0;
+        $conflict = fetch_one(
+            "SELECT id FROM transactions
+             WHERE table_id = :table_id AND type = 'billiard' AND status IN ('active','booked')
+               AND start_time < :end
+               AND (expected_end_time IS NULL OR expected_end_time > :start)
+             LIMIT 1",
+            [':table_id' => $tableId, ':start' => $start, ':end' => $end]
+        );
 
-        // 4. Insert Transaksi (id auto_increment)
-        $qTx = "INSERT INTO transactions (type, table_id, package_id, user_id, customer_name, start_time, expected_end_time, billiard_cost, fnb_cost, total_cost, status, created_at, updated_at) 
-                VALUES ('billiard', :table_id, :package_id, :user_id, :customer_name, :start_time, :expected_end_time, :billiard_cost, 0, :total_cost, 'active', NOW(), NOW())";
-        $stmtTx = $this->conn->prepare($qTx);
-        $stmtTx->execute([
-            ':table_id' => $tableId,
-            ':package_id' => $packageId,
-            ':user_id' => $userId,
-            ':customer_name' => $customerName,
-            ':start_time' => $startTime,
-            ':expected_end_time' => $expectedEndTime,
-            ':billiard_cost' => $billiardCost,
-            ':total_cost' => $billiardCost
-        ]);
+        if ($table['status'] === 'active' || $conflict) {
+            throw new RuntimeException('Meja sedang dipakai atau sudah memiliki booking pada waktu tersebut.');
+        }
 
-        $txId = (int)$this->conn->lastInsertId();
+        $billiardCost = (float) $package['price'] * $durationHours;
+        $fnbCost = 0.0;
 
-        // 5. Insert Item F&B jika ada
-        if (!empty($items) && is_array($items)) {
-            $stmtItem = $this->conn->prepare("INSERT INTO transaction_items (transaction_id, fnb_item_id, price, quantity, subtotal, status, created_at, updated_at) 
-                                              VALUES (:tx_id, :fnb_id, :price, :qty, :subtotal, 'pending', NOW(), NOW())");
+        $this->db->beginTransaction();
+        try {
+            execute_sql(
+                "INSERT INTO transactions
+                    (type, table_id, package_id, user_id, customer_name, start_time, expected_end_time,
+                     billiard_cost, fnb_cost, total_cost, status, created_at, updated_at)
+                 VALUES
+                    ('billiard', :table_id, :package_id, :user_id, :customer_name, :start_time, :expected_end_time,
+                     :billiard_cost, 0, :total_cost, 'active', NOW(), NOW())",
+                [
+                    ':table_id' => $tableId,
+                    ':package_id' => $packageId,
+                    ':user_id' => $userId,
+                    ':customer_name' => $customerName,
+                    ':start_time' => $start,
+                    ':expected_end_time' => $end,
+                    ':billiard_cost' => $billiardCost,
+                    ':total_cost' => $billiardCost,
+                ]
+            );
+            $transactionId = (int) $this->db->lastInsertId();
 
-            foreach ($items as $it) {
-                $qty = (int)($it['quantity'] ?? 0);
-                if ($qty <= 0) continue;
-
-                $fnbStmt = $this->conn->prepare("SELECT price FROM fnb_items WHERE id = :id LIMIT 1");
-                $fnbStmt->execute([':id' => $it['fnb_item_id']]);
-                $fnb = $fnbStmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($fnb) {
-                    $itemPrice = (float)$fnb['price'];
-                    $subtotal = $itemPrice * $qty;
-                    $fnbCost += $subtotal;
-
-                    $stmtItem->execute([
-                        ':tx_id' => $txId,
-                        ':fnb_id' => $it['fnb_item_id'],
-                        ':price' => $itemPrice,
-                        ':qty' => $qty,
-                        ':subtotal' => $subtotal
-                    ]);
-                }
+            $fnbCost = $this->insertItems($transactionId, $items);
+            execute_sql(
+                'UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id',
+                [':id' => $transactionId, ':fnb_cost' => $fnbCost, ':total_cost' => $billiardCost + $fnbCost]
+            );
+            execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tableId]);
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
             }
+            throw $e;
         }
 
-        // 6. Update Total Biaya Transaksi
-        $totalCost = $billiardCost + $fnbCost;
-        $updTx = $this->conn->prepare("UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost WHERE id = :id");
-        $updTx->execute([
-            ':fnb_cost' => $fnbCost,
-            ':total_cost' => $totalCost,
-            ':id' => $txId
-        ]);
-
-        // 7. Update Status Meja menjadi 'active'
-        $updTbl = $this->conn->prepare("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id");
-        $updTbl->execute([':id' => $tableId]);
-
-        // 8. Nyalakan Lampu Relay
-        $this->controlRelay($table['relay_channel'], 'on');
-
-        return $txId;
+        RelayService::setLight($table, true);
+        return $this->find($transactionId);
     }
 
-    public function updateSession($tableId, $txId, $packageId, $durationHours, $items = []) {
-        $txStmt = $this->conn->prepare("SELECT * FROM transactions WHERE id = :id AND table_id = :table_id AND status = 'active' LIMIT 1");
-        $txStmt->execute([
-            ':id' => $txId,
-            ':table_id' => $tableId
-        ]);
-        $tx = $txStmt->fetch(PDO::FETCH_ASSOC);
+    private function insertItems(int $transactionId, array $items): float
+    {
+        $total = 0.0;
+        foreach ($items as $item) {
+            $quantity = (int) ($item['quantity'] ?? 0);
+            $fnbId = (int) ($item['fnb_item_id'] ?? 0);
+            if ($quantity <= 0 || $fnbId <= 0) {
+                continue;
+            }
 
+            $fnb = fetch_one('SELECT * FROM fnb_items WHERE id = :id LIMIT 1', [':id' => $fnbId]);
+            if (!$fnb) {
+                continue;
+            }
+
+            $price = (float) $fnb['price'];
+            $subtotal = $price * $quantity;
+            $total += $subtotal;
+            execute_sql(
+                "INSERT INTO transaction_items (transaction_id, fnb_item_id, quantity, price, subtotal, status, created_at, updated_at)
+                 VALUES (:transaction_id, :fnb_item_id, :quantity, :price, :subtotal, 'pending', NOW(), NOW())",
+                [
+                    ':transaction_id' => $transactionId,
+                    ':fnb_item_id' => $fnbId,
+                    ':quantity' => $quantity,
+                    ':price' => $price,
+                    ':subtotal' => $subtotal,
+                ]
+            );
+        }
+        return $total;
+    }
+
+    public function updateSession(string $tableId, int $transactionId, int $packageId, float $durationHours, array $items = []): array
+    {
+        $tx = fetch_one(
+            "SELECT * FROM transactions WHERE id = :id AND table_id = :table_id AND status = 'active' LIMIT 1",
+            [':id' => $transactionId, ':table_id' => $tableId]
+        );
         if (!$tx) {
-            throw new Exception("Sesi transaksi tidak ditemukan atau sudah tidak aktif.");
+            throw new RuntimeException('Sesi transaksi tidak ditemukan atau sudah tidak aktif.');
         }
 
-        // Validasi durasi tidak boleh kurang dari waktu berjalan (sesuai poolstream)
-        $elapsedMinutes = (time() - strtotime($tx['start_time'])) / 60;
+        $elapsedMinutes = (time() - strtotime((string) $tx['start_time'])) / 60;
         $elapsedHours = $elapsedMinutes / 60;
         if ($durationHours < $elapsedHours) {
-            throw new Exception("Durasi pesanan tidak boleh kurang dari waktu yang sudah berjalan (" . number_format($elapsedHours, 1) . " jam).");
+            throw new RuntimeException('Durasi pesanan tidak boleh kurang dari waktu yang sudah berjalan (' . number_format($elapsedHours, 1) . ' jam).');
         }
 
-        $pkgStmt = $this->conn->prepare("SELECT * FROM packages WHERE id = :id LIMIT 1");
-        $pkgStmt->execute([':id' => $packageId]);
-        $package = $pkgStmt->fetch(PDO::FETCH_ASSOC);
-
+        $package = fetch_one('SELECT * FROM packages WHERE id = :id LIMIT 1', [':id' => $packageId]);
         if (!$package) {
-            throw new Exception("Paket tidak valid.");
+            throw new RuntimeException('Paket tidak valid.');
         }
 
-        $startObj = new DateTime($tx['start_time']);
-        $expectedMinutes = round($durationHours * 60);
-        $newEndObj = clone $startObj;
-        $newEndObj->modify("+{$expectedMinutes} minutes");
-        $newExpectedEndTime = $newEndObj->format('Y-m-d H:i:s');
+        $expectedEnd = date('Y-m-d H:i:s', strtotime((string) $tx['start_time'] . ' +' . (int) round($durationHours * 60) . ' minutes'));
+        $billiardCost = (float) $package['price'] * $durationHours;
 
-        $billiardCost = $package['price'] * $durationHours;
-        $fnbCost = 0;
+        $this->db->beginTransaction();
+        try {
+            execute_sql('DELETE FROM transaction_items WHERE transaction_id = :id', [':id' => $transactionId]);
+            $fnbCost = $this->insertItems($transactionId, $items);
+            execute_sql(
+                "UPDATE transactions
+                 SET package_id = :package_id, expected_end_time = :expected_end_time,
+                     billiard_cost = :billiard_cost, fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW()
+                 WHERE id = :id",
+                [
+                    ':id' => $transactionId,
+                    ':package_id' => $packageId,
+                    ':expected_end_time' => $expectedEnd,
+                    ':billiard_cost' => $billiardCost,
+                    ':fnb_cost' => $fnbCost,
+                    ':total_cost' => $billiardCost + $fnbCost,
+                ]
+            );
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
 
-        // Reset & Re-insert Item F&B
-        $delStmt = $this->conn->prepare("DELETE FROM transaction_items WHERE transaction_id = :tx_id");
-        $delStmt->execute([':tx_id' => $txId]);
+        return $this->find($transactionId);
+    }
 
-        if (!empty($items) && is_array($items)) {
-            $stmtItem = $this->conn->prepare("INSERT INTO transaction_items (transaction_id, fnb_item_id, price, quantity, subtotal, status, created_at, updated_at) 
-                                              VALUES (:tx_id, :fnb_id, :price, :qty, :subtotal, 'pending', NOW(), NOW())");
+    public function stopSession(string $tableId): ?array
+    {
+        $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tableId]);
+        $tx = $this->activeForTable($tableId);
 
-            foreach ($items as $it) {
-                $qty = (int)($it['quantity'] ?? 0);
-                if ($qty <= 0) continue;
+        if ($tx) {
+            $end = now();
+            execute_sql(
+                "UPDATE transactions SET end_time = :end_time, status = 'completed', updated_at = NOW() WHERE id = :id",
+                [':id' => $tx['id'], ':end_time' => $end]
+            );
+            $this->recalculate((int) $tx['id']);
+            $tx = $this->find((int) $tx['id']);
+        }
 
-                $fnbStmt = $this->conn->prepare("SELECT price FROM fnb_items WHERE id = :id LIMIT 1");
-                $fnbStmt->execute([':id' => $it['fnb_item_id']]);
-                $fnb = $fnbStmt->fetch(PDO::FETCH_ASSOC);
+        execute_sql("UPDATE tables SET status = 'inactive', updated_at = NOW() WHERE id = :id", [':id' => $tableId]);
+        if ($table) {
+            RelayService::setLight($table, false);
+        }
 
-                if ($fnb) {
-                    $itemPrice = (float)$fnb['price'];
-                    $subtotal = $itemPrice * $qty;
-                    $fnbCost += $subtotal;
+        return $tx ? $this->find((int) $tx['id']) : null;
+    }
 
-                    $stmtItem->execute([
-                        ':tx_id' => $txId,
-                        ':fnb_id' => $it['fnb_item_id'],
-                        ':price' => $itemPrice,
-                        ':qty' => $qty,
-                        ':subtotal' => $subtotal
-                    ]);
-                }
+    public function startBooking(int $transactionId): array
+    {
+        $tx = fetch_one("SELECT * FROM transactions WHERE id = :id LIMIT 1", [':id' => $transactionId]);
+        if (!$tx || $tx['type'] !== 'billiard' || $tx['status'] !== 'booked') {
+            throw new RuntimeException('Booking tidak valid atau sudah diproses.');
+        }
+
+        $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tx['table_id']]);
+        if (!$table) {
+            throw new RuntimeException('Meja untuk booking ini tidak ditemukan.');
+        }
+        if (!empty($tx['expected_end_time']) && strtotime((string) $tx['expected_end_time']) < time()) {
+            throw new RuntimeException('Jadwal booking sudah lewat.');
+        }
+        if (strtotime((string) $tx['start_time']) > time() + 30 * 60) {
+            throw new RuntimeException('Booking belum bisa dimulai. Tunggu hingga 30 menit sebelum jadwal.');
+        }
+        if ($table['status'] === 'active') {
+            throw new RuntimeException('Meja sedang dipakai sesi lain.');
+        }
+
+        $other = fetch_one(
+            "SELECT id FROM transactions WHERE table_id = :table_id AND status = 'active' AND id <> :id LIMIT 1",
+            [':table_id' => $tx['table_id'], ':id' => $transactionId]
+        );
+        if ($other) {
+            throw new RuntimeException('Meja sedang dipakai sesi lain.');
+        }
+
+        execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tx['table_id']]);
+        execute_sql("UPDATE transactions SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
+        RelayService::setLight($table, true);
+
+        return $this->find($transactionId);
+    }
+
+    public function autoCheckoutExpired(): int
+    {
+        $expired = fetch_all(
+            "SELECT t.*, tbl.relay_channel, tbl.name AS table_name
+             FROM transactions t JOIN tables tbl ON tbl.id = t.table_id
+             WHERE t.status = 'active' AND t.expected_end_time IS NOT NULL AND t.expected_end_time <= NOW()"
+        );
+
+        foreach ($expired as $tx) {
+            execute_sql(
+                "UPDATE transactions SET end_time = :end_time, total_cost = billiard_cost + fnb_cost, status = 'completed', updated_at = NOW() WHERE id = :id",
+                [':end_time' => $tx['expected_end_time'], ':id' => $tx['id']]
+            );
+            execute_sql("UPDATE tables SET status = 'inactive', updated_at = NOW() WHERE id = :id", [':id' => $tx['table_id']]);
+            $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tx['table_id']]);
+            if ($table) {
+                RelayService::setLight($table, false);
             }
         }
 
-        $totalCost = $billiardCost + $fnbCost;
-        $upd = $this->conn->prepare("UPDATE transactions SET package_id = :pkg_id, expected_end_time = :end_time, billiard_cost = :billiard_cost, fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id");
-        $upd->execute([
-            ':pkg_id' => $packageId,
-            ':end_time' => $newExpectedEndTime,
-            ':billiard_cost' => $billiardCost,
-            ':fnb_cost' => $fnbCost,
-            ':total_cost' => $totalCost,
-            ':id' => $txId
-        ]);
-
-        return true;
-    }
-
-    public function stopSession($tableId) {
-        $tblStmt = $this->conn->prepare("SELECT * FROM tables WHERE id = :id LIMIT 1");
-        $tblStmt->execute([':id' => $tableId]);
-        $table = $tblStmt->fetch(PDO::FETCH_ASSOC);
-
-        // Ambil transaksi aktif
-        $txStmt = $this->conn->prepare("SELECT t.*, p.name as package_name, p.price as package_price 
-                                        FROM transactions t 
-                                        LEFT JOIN packages p ON t.package_id = p.id 
-                                        WHERE t.table_id = :table_id AND t.status = 'active' 
-                                        ORDER BY t.created_at DESC LIMIT 1");
-        $txStmt->execute([':table_id' => $tableId]);
-        $tx = $txStmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($tx) {
-            $now = date('Y-m-d H:i:s');
-            // Recalculate total
-            $totalCost = $tx['billiard_cost'] + $tx['fnb_cost'];
-            $updTx = $this->conn->prepare("UPDATE transactions SET end_time = :now, total_cost = :total_cost, status = 'completed', updated_at = NOW() WHERE id = :id");
-            $updTx->execute([
-                ':now' => $now,
-                ':total_cost' => $totalCost,
-                ':id' => $tx['id']
-            ]);
-
-            // Ambil items untuk struk
-            $stmtItems = $this->conn->prepare("SELECT ti.*, f.name as fnb_name 
-                                               FROM transaction_items ti 
-                                               LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                                               WHERE ti.transaction_id = :tx_id");
-            $stmtItems->execute([':tx_id' => $tx['id']]);
-            $tx['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-            $tx['end_time'] = $now;
-            $tx['total_cost'] = $totalCost;
-        }
-
-        // Ubah status meja menjadi 'inactive'
-        $updTbl = $this->conn->prepare("UPDATE tables SET status = 'inactive', updated_at = NOW() WHERE id = :id");
-        $updTbl->execute([':id' => $tableId]);
-
-        // Matikan Lampu Relay
-        if ($table) {
-            $this->controlRelay($table['relay_channel'], 'off');
-        }
-
-        return $tx;
-    }
-
-    public function autoCheckoutExpired() {
-        $now = date('Y-m-d H:i:s');
-        $stmt = $this->conn->prepare("SELECT t.*, tbl.relay_channel, tbl.name as table_name 
-                                      FROM transactions t 
-                                      JOIN tables tbl ON t.table_id = tbl.id 
-                                      WHERE t.status = 'active' 
-                                        AND t.expected_end_time IS NOT NULL 
-                                        AND t.expected_end_time <= :now");
-        $stmt->execute([':now' => $now]);
-        $expired = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($expired as $tx) {
-            $endTime = $tx['expected_end_time'];
-            $totalCost = $tx['billiard_cost'] + $tx['fnb_cost'];
-            $updTx = $this->conn->prepare("UPDATE transactions SET end_time = :end_time, total_cost = :total_cost, status = 'completed', updated_at = NOW() WHERE id = :id");
-            $updTx->execute([
-                ':end_time' => $endTime,
-                ':total_cost' => $totalCost,
-                ':id' => $tx['id']
-            ]);
-
-            $updTbl = $this->conn->prepare("UPDATE tables SET status = 'inactive', updated_at = NOW() WHERE id = :id");
-            $updTbl->execute([':id' => $tx['table_id']]);
-
-            $this->controlRelay($tx['relay_channel'], 'off');
-        }
+        execute_sql(
+            "UPDATE transactions SET status = 'cancelled', updated_at = NOW()
+             WHERE type = 'billiard' AND status = 'booked' AND expected_end_time IS NOT NULL AND expected_end_time <= NOW()"
+        );
 
         return count($expired);
     }
 
-    // ============================================================
-    // F&B STANDALONE ORDERS (KASIR & BILLING)
-    // ============================================================
-
-    public function createFnbOrder($userId, $customerName, $items = []) {
-        $customerName = trim($customerName);
-        if (empty($customerName)) {
-            throw new Exception("Nama pelanggan wajib diisi.");
+    public function createBooking(string $tableId, string $userId, string $customerName, int $packageId, string $start, string $end, float $cost): array
+    {
+        if (in_array($tableId, $this->busyTableIds($start, $end), true)) {
+            throw new RuntimeException('Meja ini sudah dibooking pada jam tersebut. Silakan pilih meja lain.');
         }
 
-        // Validate user_id foreign key or fallback to null
-        if (!empty($userId)) {
-            $uStmt = $this->conn->prepare("SELECT id FROM users WHERE id = :uid LIMIT 1");
-            $uStmt->execute([':uid' => $userId]);
-            if (!$uStmt->fetch()) {
-                $userId = null;
-            }
-        } else {
+        execute_sql(
+            "INSERT INTO transactions
+                (type, table_id, package_id, user_id, customer_name, start_time, expected_end_time,
+                 billiard_cost, fnb_cost, total_cost, status, created_at, updated_at)
+             VALUES
+                ('billiard', :table_id, :package_id, :user_id, :customer_name, :start_time, :expected_end_time,
+                 :billiard_cost, 0, :total_cost, 'booked', NOW(), NOW())",
+            [
+                ':table_id' => $tableId,
+                ':package_id' => $packageId,
+                ':user_id' => $userId,
+                ':customer_name' => $customerName,
+                ':start_time' => $start,
+                ':expected_end_time' => $end,
+                ':billiard_cost' => $cost,
+                ':total_cost' => $cost,
+            ]
+        );
+
+        return $this->find((int) $this->db->lastInsertId());
+    }
+
+    public function cancelBooking(int $transactionId, string $userId): void
+    {
+        $tx = fetch_one('SELECT * FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$tx || $tx['user_id'] !== $userId || $tx['type'] !== 'billiard') {
+            throw new RuntimeException('Booking tidak ditemukan.', 403);
+        }
+        if ($tx['status'] !== 'booked') {
+            throw new RuntimeException('Booking ini tidak bisa dibatalkan.');
+        }
+        if (strtotime((string) $tx['start_time']) < time()) {
+            throw new RuntimeException('Booking yang sudah dimulai tidak bisa dibatalkan.');
+        }
+
+        execute_sql("UPDATE transactions SET status = 'cancelled', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
+    }
+
+    public function createFnbOrder(?string $userId, string $customerName, array $items = []): array
+    {
+        $customerName = trim($customerName);
+        if ($customerName === '') {
+            throw new RuntimeException('Nama pelanggan wajib diisi.');
+        }
+        if ($userId && !fetch_one('SELECT id FROM users WHERE id = :id LIMIT 1', [':id' => $userId])) {
             $userId = null;
         }
 
-        $now = date('Y-m-d H:i:s');
-        $qTx = "INSERT INTO transactions (type, table_id, package_id, user_id, customer_name, start_time, billiard_cost, fnb_cost, total_cost, status, created_at, updated_at) 
-                VALUES ('fnb_only', NULL, NULL, :user_id, :customer_name, :start_time, 0, 0, 0, 'active', NOW(), NOW())";
-        $stmtTx = $this->conn->prepare($qTx);
-        $stmtTx->execute([
-            ':user_id' => $userId,
-            ':customer_name' => $customerName,
-            ':start_time' => $now
-        ]);
+        execute_sql(
+            "INSERT INTO transactions
+                (type, table_id, package_id, user_id, customer_name, start_time,
+                 billiard_cost, fnb_cost, total_cost, status, created_at, updated_at)
+             VALUES
+                ('fnb_only', NULL, NULL, :user_id, :customer_name, :start_time, 0, 0, 0, 'active', NOW(), NOW())",
+            [':user_id' => $userId, ':customer_name' => $customerName, ':start_time' => now()]
+        );
+        $transactionId = (int) $this->db->lastInsertId();
+        $fnbCost = $this->insertItems($transactionId, $items);
+        execute_sql(
+            'UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id',
+            [':id' => $transactionId, ':fnb_cost' => $fnbCost, ':total_cost' => $fnbCost]
+        );
 
-        $txId = (int)$this->conn->lastInsertId();
-        $fnbCost = 0;
-
-        if (!empty($items) && is_array($items)) {
-            $stmtItem = $this->conn->prepare("INSERT INTO transaction_items (transaction_id, fnb_item_id, price, quantity, subtotal, status, created_at, updated_at) 
-                                              VALUES (:tx_id, :fnb_id, :price, :qty, :subtotal, 'pending', NOW(), NOW())");
-
-            foreach ($items as $it) {
-                $fnbId = (int)($it['fnb_item_id'] ?? $it['fnb_id'] ?? 0);
-                $qty = (int)($it['quantity'] ?? 0);
-                if ($fnbId <= 0 || $qty <= 0) continue;
-
-                $fnbStmt = $this->conn->prepare("SELECT price FROM fnb_items WHERE id = :id LIMIT 1");
-                $fnbStmt->execute([':id' => $fnbId]);
-                $fnb = $fnbStmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($fnb) {
-                    $itemPrice = (float)$fnb['price'];
-                    $subtotal = $itemPrice * $qty;
-                    $fnbCost += $subtotal;
-
-                    $stmtItem->execute([
-                        ':tx_id' => $txId,
-                        ':fnb_id' => $fnbId,
-                        ':price' => $itemPrice,
-                        ':qty' => $qty,
-                        ':subtotal' => $subtotal
-                    ]);
-                }
-            }
-        }
-
-        $updTx = $this->conn->prepare("UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost WHERE id = :id");
-        $updTx->execute([
-            ':fnb_cost' => $fnbCost,
-            ':total_cost' => $fnbCost,
-            ':id' => $txId
-        ]);
-
-        return $txId;
+        return $this->find($transactionId);
     }
 
-    public function getActiveFnbOrders($search = '') {
-        $sql = "SELECT t.*, u.name as cashier_name 
-                FROM transactions t 
-                LEFT JOIN users u ON t.user_id = u.id 
-                WHERE t.type = 'fnb_only' AND t.status = 'active'";
-        $params = [];
-
-        if (!empty($search)) {
-            $sql .= " AND t.customer_name LIKE :search";
-            $params[':search'] = "%{$search}%";
-        }
-
-        $sql .= " ORDER BY t.created_at ASC";
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-        $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($orders as &$order) {
-            $stmtItems = $this->conn->prepare("SELECT ti.*, f.name as fnb_name, f.category as fnb_category, f.image_path 
-                                               FROM transaction_items ti 
-                                               LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                                               WHERE ti.transaction_id = :tx_id 
-                                               ORDER BY ti.id ASC");
-            $stmtItems->execute([':tx_id' => $order['id']]);
-            $order['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        return $orders;
+    public function getActiveFnbOrders(): array
+    {
+        $rows = fetch_all(
+            "SELECT t.*, u.name AS cashier_name
+             FROM transactions t LEFT JOIN users u ON u.id = t.user_id
+             WHERE t.type = 'fnb_only' AND t.status = 'active'
+             ORDER BY t.created_at DESC"
+        );
+        return array_map(function (array $row): array {
+            $data = $this->shape($row);
+            $data['cashier_name'] = $row['cashier_name'] ?? null;
+            return $data;
+        }, $rows);
     }
 
-    public function getFnbHistory($filterPreset = 'hari_ini', $search = '') {
-        $sql = "SELECT t.*, u.name as cashier_name 
-                FROM transactions t 
-                LEFT JOIN users u ON t.user_id = u.id 
-                WHERE t.type = 'fnb_only' AND t.status IN ('completed', 'cancelled')";
-        $params = [];
-
-        if ($filterPreset === '7_hari') {
-            $sql .= " AND t.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-        } elseif ($filterPreset === '30_hari') {
-            $sql .= " AND t.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-        } elseif ($filterPreset === 'bulan_ini') {
-            $sql .= " AND MONTH(t.created_at) = MONTH(CURRENT_DATE()) AND YEAR(t.created_at) = YEAR(CURRENT_DATE())";
-        } else {
-            // Default: Hari ini
-            $sql .= " AND DATE(t.created_at) = CURDATE()";
-        }
-
-        if (!empty($search)) {
-            $sql .= " AND t.customer_name LIKE :search";
-            $params[':search'] = "%{$search}%";
-        }
-
-        $sql .= " ORDER BY t.created_at DESC";
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
-        $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($orders as &$order) {
-            $stmtItems = $this->conn->prepare("SELECT ti.*, f.name as fnb_name, f.category as fnb_category, f.image_path 
-                                               FROM transaction_items ti 
-                                               LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                                               WHERE ti.transaction_id = :tx_id 
-                                               ORDER BY ti.id ASC");
-            $stmtItems->execute([':tx_id' => $order['id']]);
-            $order['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        return $orders;
+    public function getFnbHistory(int $limit = 50): array
+    {
+        $rows = fetch_all(
+            "SELECT t.*, u.name AS cashier_name
+             FROM transactions t LEFT JOIN users u ON u.id = t.user_id
+             WHERE t.type = 'fnb_only' AND t.status IN ('completed','cancelled')
+             ORDER BY t.created_at DESC LIMIT {$limit}"
+        );
+        return array_map(function (array $row): array {
+            $data = $this->shape($row);
+            $data['cashier_name'] = $row['cashier_name'] ?? null;
+            return $data;
+        }, $rows);
     }
 
-    public function getFnbOrderDetails($transactionId) {
-        $stmt = $this->conn->prepare("SELECT t.*, u.name as cashier_name 
-                                      FROM transactions t 
-                                      LEFT JOIN users u ON t.user_id = u.id 
-                                      WHERE t.id = :id AND t.type = 'fnb_only' LIMIT 1");
-        $stmt->execute([':id' => $transactionId]);
-        $tx = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$tx) {
+    public function fnbOrderDetails(int $id): ?array
+    {
+        $row = fetch_one(
+            "SELECT t.*, u.name AS cashier_name
+             FROM transactions t LEFT JOIN users u ON u.id = t.user_id
+             WHERE t.id = :id AND t.type = 'fnb_only' LIMIT 1",
+            [':id' => $id]
+        );
+        if (!$row) {
             return null;
         }
-
-        $stmtItems = $this->conn->prepare("SELECT ti.*, f.name as fnb_name, f.category as fnb_category, f.image_path 
-                                           FROM transaction_items ti 
-                                           LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                                           WHERE ti.transaction_id = :tx_id 
-                                           ORDER BY ti.id ASC");
-        $stmtItems->execute([':tx_id' => $transactionId]);
-        $tx['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-
-        return $tx;
+        $data = $this->shape($row);
+        $data['cashier_name'] = $row['cashier_name'] ?? null;
+        return $data;
     }
 
-    public function addFnbOrderItem($transactionId, $fnbItemId, $quantity = 1) {
-        $quantity = max(1, (int)$quantity);
-
-        $tx = $this->getFnbOrderDetails($transactionId);
-        if (!$tx || $tx['status'] !== 'active') {
-            throw new Exception("Transaksi tidak ditemukan atau sudah tidak aktif.");
+    public function addItem(int $transactionId, int $fnbItemId, int $quantity = 1): array
+    {
+        $transaction = fetch_one('SELECT * FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$transaction || $transaction['status'] !== 'active') {
+            throw new RuntimeException('Transaksi tidak ditemukan atau sudah tidak aktif.');
         }
 
-        $fnbStmt = $this->conn->prepare("SELECT * FROM fnb_items WHERE id = :id LIMIT 1");
-        $fnbStmt->execute([':id' => $fnbItemId]);
-        $fnb = $fnbStmt->fetch(PDO::FETCH_ASSOC);
+        $fnb = fetch_one('SELECT * FROM fnb_items WHERE id = :id LIMIT 1', [':id' => $fnbItemId]);
         if (!$fnb) {
-            throw new Exception("Item F&B tidak ditemukan.");
+            throw new RuntimeException('Item F&B tidak ditemukan.');
         }
 
-        $itemStmt = $this->conn->prepare("SELECT * FROM transaction_items WHERE transaction_id = :tx_id AND fnb_item_id = :fnb_id LIMIT 1");
-        $itemStmt->execute([':tx_id' => $transactionId, ':fnb_id' => $fnbItemId]);
-        $existing = $itemStmt->fetch(PDO::FETCH_ASSOC);
+        $quantity = max(1, $quantity);
+        $existing = fetch_one(
+            'SELECT * FROM transaction_items WHERE transaction_id = :transaction_id AND fnb_item_id = :fnb_item_id LIMIT 1',
+            [':transaction_id' => $transactionId, ':fnb_item_id' => $fnbItemId]
+        );
 
         if ($existing) {
-            $newQty = (int)$existing['quantity'] + $quantity;
-            $newSubtotal = (float)$existing['price'] * $newQty;
-            $updItem = $this->conn->prepare("UPDATE transaction_items SET quantity = :qty, subtotal = :subtotal, updated_at = NOW() WHERE id = :id");
-            $updItem->execute([':qty' => $newQty, ':subtotal' => $newSubtotal, ':id' => $existing['id']]);
+            $newQty = (int) $existing['quantity'] + $quantity;
+            execute_sql(
+                'UPDATE transaction_items SET quantity = :quantity, subtotal = price * :quantity2, updated_at = NOW() WHERE id = :id',
+                [':id' => $existing['id'], ':quantity' => $newQty, ':quantity2' => $newQty]
+            );
         } else {
-            $price = (float)$fnb['price'];
-            $subtotal = $price * $quantity;
-            $insItem = $this->conn->prepare("INSERT INTO transaction_items (transaction_id, fnb_item_id, price, quantity, subtotal, status, created_at, updated_at) 
-                                             VALUES (:tx_id, :fnb_id, :price, :qty, :subtotal, 'pending', NOW(), NOW())");
-            $insItem->execute([
-                ':tx_id' => $transactionId,
-                ':fnb_id' => $fnbItemId,
-                ':price' => $price,
-                ':qty' => $quantity,
-                ':subtotal' => $subtotal
-            ]);
+            execute_sql(
+                "INSERT INTO transaction_items (transaction_id, fnb_item_id, quantity, price, subtotal, status, created_at, updated_at)
+                 VALUES (:transaction_id, :fnb_item_id, :quantity, :price, :subtotal, 'pending', NOW(), NOW())",
+                [
+                    ':transaction_id' => $transactionId,
+                    ':fnb_item_id' => $fnbItemId,
+                    ':quantity' => $quantity,
+                    ':price' => (float) $fnb['price'],
+                    ':subtotal' => (float) $fnb['price'] * $quantity,
+                ]
+            );
         }
 
-        $this->recalculateFnbTotals($transactionId);
-        return $this->getFnbOrderDetails($transactionId);
+        $this->recalculate($transactionId);
+        return $this->find($transactionId) ?? [];
     }
 
-    public function updateFnbItemQuantity($itemId, $change = 1) {
-        $itemStmt = $this->conn->prepare("SELECT ti.*, t.status as tx_status 
-                                          FROM transaction_items ti 
-                                          JOIN transactions t ON ti.transaction_id = t.id 
-                                          WHERE ti.id = :id LIMIT 1");
-        $itemStmt->execute([':id' => $itemId]);
-        $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
-
+    public function updateItemQuantity(int $itemId, int $change = 1): array
+    {
+        $item = fetch_one(
+            'SELECT ti.*, t.status AS tx_status FROM transaction_items ti JOIN transactions t ON t.id = ti.transaction_id WHERE ti.id = :id LIMIT 1',
+            [':id' => $itemId]
+        );
         if (!$item || $item['tx_status'] !== 'active') {
-            throw new Exception("Item transaksi tidak ditemukan atau transaksi sudah selesai.");
+            throw new RuntimeException('Item transaksi tidak ditemukan atau transaksi sudah selesai.');
         }
 
-        $newQty = (int)$item['quantity'] + (int)$change;
-
+        $newQty = (int) $item['quantity'] + $change;
         if ($newQty <= 0) {
-            $del = $this->conn->prepare("DELETE FROM transaction_items WHERE id = :id");
-            $del->execute([':id' => $itemId]);
+            execute_sql('DELETE FROM transaction_items WHERE id = :id', [':id' => $itemId]);
         } else {
-            $subtotal = (float)$item['price'] * $newQty;
-            $upd = $this->conn->prepare("UPDATE transaction_items SET quantity = :qty, subtotal = :subtotal, updated_at = NOW() WHERE id = :id");
-            $upd->execute([':qty' => $newQty, ':subtotal' => $subtotal, ':id' => $itemId]);
+            execute_sql(
+                'UPDATE transaction_items SET quantity = :quantity, subtotal = price * :quantity2, updated_at = NOW() WHERE id = :id',
+                [':id' => $itemId, ':quantity' => $newQty, ':quantity2' => $newQty]
+            );
         }
 
-        $this->recalculateFnbTotals($item['transaction_id']);
-        return $this->getFnbOrderDetails($item['transaction_id']);
+        $this->recalculate((int) $item['transaction_id']);
+        return $this->find((int) $item['transaction_id']) ?? [];
     }
 
-    public function removeFnbItem($itemId) {
-        $itemStmt = $this->conn->prepare("SELECT ti.*, t.status as tx_status 
-                                          FROM transaction_items ti 
-                                          JOIN transactions t ON ti.transaction_id = t.id 
-                                          WHERE ti.id = :id LIMIT 1");
-        $itemStmt->execute([':id' => $itemId]);
-        $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
-
+    public function removeItem(int $itemId): array
+    {
+        $item = fetch_one(
+            'SELECT ti.*, t.status AS tx_status FROM transaction_items ti JOIN transactions t ON t.id = ti.transaction_id WHERE ti.id = :id LIMIT 1',
+            [':id' => $itemId]
+        );
         if (!$item || $item['tx_status'] !== 'active') {
-            throw new Exception("Item transaksi tidak ditemukan atau transaksi sudah selesai.");
+            throw new RuntimeException('Item transaksi tidak ditemukan atau transaksi sudah selesai.');
         }
-
-        $del = $this->conn->prepare("DELETE FROM transaction_items WHERE id = :id");
-        $del->execute([':id' => $itemId]);
-
-        $this->recalculateFnbTotals($item['transaction_id']);
-        return $this->getFnbOrderDetails($item['transaction_id']);
+        execute_sql('DELETE FROM transaction_items WHERE id = :id', [':id' => $itemId]);
+        $this->recalculate((int) $item['transaction_id']);
+        return $this->find((int) $item['transaction_id']) ?? [];
     }
 
-    public function checkoutFnbOrder($transactionId) {
-        $tx = $this->getFnbOrderDetails($transactionId);
-        if (!$tx || $tx['status'] !== 'active') {
-            throw new Exception("Pesanan tidak ditemukan atau sudah selesai.");
+    public function checkoutFnbOrder(int $transactionId): array
+    {
+        $row = fetch_one('SELECT * FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$row || $row['status'] !== 'active') {
+            throw new RuntimeException('Pesanan tidak ditemukan atau sudah selesai.');
+        }
+        if ($row['type'] !== 'fnb_only') {
+            throw new RuntimeException('Gunakan checkout meja untuk transaksi biliar.');
         }
 
-        $this->recalculateFnbTotals($transactionId);
-
-        $now = date('Y-m-d H:i:s');
-        $upd = $this->conn->prepare("UPDATE transactions SET status = 'completed', end_time = :now, updated_at = NOW() WHERE id = :id");
-        $upd->execute([':now' => $now, ':id' => $transactionId]);
-
-        return $this->getFnbOrderDetails($transactionId);
+        $this->recalculate($transactionId);
+        execute_sql(
+            "UPDATE transactions SET end_time = NOW(), status = 'completed', updated_at = NOW() WHERE id = :id",
+            [':id' => $transactionId]
+        );
+        return $this->find($transactionId) ?? [];
     }
 
-    public function recalculateFnbTotals($transactionId) {
-        $sumStmt = $this->conn->prepare("SELECT COALESCE(SUM(subtotal), 0) as total FROM transaction_items WHERE transaction_id = :id");
-        $sumStmt->execute([':id' => $transactionId]);
-        $totalFnb = (float)$sumStmt->fetchColumn();
+    public function recalculate(int $transactionId): void
+    {
+        $row = fetch_one('SELECT billiard_cost FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$row) {
+            return;
+        }
+        $fnb = (float) fetch_value('SELECT COALESCE(SUM(subtotal), 0) FROM transaction_items WHERE transaction_id = :id', [':id' => $transactionId]);
+        $total = (float) $row['billiard_cost'] + $fnb;
+        execute_sql(
+            'UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id',
+            [':id' => $transactionId, ':fnb_cost' => $fnb, ':total_cost' => $total]
+        );
+    }
 
-        $upd = $this->conn->prepare("UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id");
-        $upd->execute([
-            ':fnb_cost' => $totalFnb,
-            ':total_cost' => $totalFnb,
-            ':id' => $transactionId
-        ]);
+    public function tablesForDate(string $date): array
+    {
+        $day = $date . ' 00:00:00';
+        $dayEnd = $date . ' 23:59:59';
+
+        $rows = fetch_all(
+            "SELECT table_id, status, start_time, expected_end_time
+             FROM transactions
+             WHERE type = 'billiard' AND status IN ('booked','active','completed')
+               AND start_time < :day_end
+               AND (expected_end_time > :day OR (expected_end_time IS NULL AND start_time >= :day2))
+             ORDER BY start_time ASC",
+            [':day' => $day, ':day2' => $day, ':day_end' => $dayEnd]
+        );
+
+        $byTable = [];
+        foreach ($rows as $row) {
+            $byTable[$row['table_id']][] = $row;
+        }
+
+        $tables = [];
+        foreach ($this->allTables() as $table) {
+            $bookings = $byTable[$table['id']] ?? [];
+            $activeOrBooked = array_values(array_filter($bookings, static fn (array $b): bool => in_array($b['status'], ['booked', 'active'], true)));
+            $next = $activeOrBooked[0]['start_time'] ?? null;
+            $tables[] = [
+                'id' => $table['id'],
+                'name' => $table['name'],
+                'relay_channel' => $table['relay_channel'],
+                'bookings_count' => count($activeOrBooked),
+                'total_bookings' => count($bookings),
+                'is_active' => in_array('active', array_column($bookings, 'status'), true),
+                'next_booking' => to_iso($next),
+            ];
+        }
+
+        return $tables;
+    }
+
+    private function allTables(): array
+    {
+        $rows = fetch_all('SELECT * FROM tables');
+        usort($rows, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+        return array_map(static fn (array $row): array => shape_table($row), $rows);
+    }
+
+    public function tableBookings(string $tableId, string $date, string $userId): array
+    {
+        $day = $date . ' 00:00:00';
+        $dayEnd = $date . ' 23:59:59';
+        $rows = fetch_all(
+            "SELECT t.*, p.name AS package_name, p.price AS package_price
+             FROM transactions t LEFT JOIN packages p ON p.id = t.package_id
+             WHERE t.table_id = :table_id AND t.type = 'billiard'
+               AND t.status IN ('booked','active','completed')
+               AND t.start_time < :day_end
+               AND (t.expected_end_time > :day OR (t.expected_end_time IS NULL AND t.start_time >= :day2))
+             ORDER BY t.start_time ASC",
+            [':table_id' => $tableId, ':day' => $day, ':day2' => $day, ':day_end' => $dayEnd]
+        );
+
+        return array_map(function (array $row) use ($userId): array {
+            return [
+                'id' => (int) $row['id'],
+                'start_time' => to_iso($row['start_time']),
+                'expected_end_time' => to_iso($row['expected_end_time']),
+                'end_time' => to_iso($row['end_time']),
+                'status' => $row['status'],
+                'is_own' => $row['user_id'] === $userId,
+                'package_name' => $row['package_name'] ?? null,
+            ];
+        }, $rows);
     }
 }

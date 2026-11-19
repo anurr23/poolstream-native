@@ -1,63 +1,149 @@
 <?php
-class User {
-    private $conn;
-    private $table_name = "users";
+declare(strict_types=1);
 
-    public $id;
-    public $name;
-    public $username;
-    public $role;
-    public $photo_path;
-    public $is_active;
+class User
+{
+    private PDO $db;
 
-    public function __construct($db) {
-        $this->conn = $db;
+    public function __construct(?PDO $db = null)
+    {
+        $this->db = $db ?? db();
     }
 
-    public function login($username, $password) {
-        if (!$this->conn) {
-            return false;
-        }
-
-        $query = "SELECT id, name, username, password, role, is_active 
-                  FROM " . $this->table_name . " 
-                  WHERE username = :username 
-                  LIMIT 1";
-
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':username', $username);
-        $stmt->execute();
-
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($user) {
-            if (!$user['is_active']) {
-                return 'inactive';
-            }
-
-            if (password_verify($password, $user['password'])) {
-                $this->id = $user['id'];
-                $this->name = $user['name'];
-                $this->username = $user['username'];
-                $this->role = $user['role'] ?? 'kasir';
-                $this->is_active = $user['is_active'];
-                return true;
-            }
-        }
-
-        return false;
+    public function find(string $id): ?array
+    {
+        return fetch_one('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => $id]);
     }
 
-    public function getById($id) {
-        $query = "SELECT id, name, username, role, photo_path, is_active 
-                  FROM " . $this->table_name . " 
-                  WHERE id = :id 
-                  LIMIT 1";
+    public function findByLogin(string $login): ?array
+    {
+        $field = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        return fetch_one("SELECT * FROM users WHERE {$field} = :login LIMIT 1", [':login' => $login]);
+    }
 
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(':id', $id);
-        $stmt->execute();
+    public function findByEmail(string $email): ?array
+    {
+        return fetch_one('SELECT * FROM users WHERE email = :email LIMIT 1', [':email' => strtolower($email)]);
+    }
 
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+    public function findByGoogleId(string $googleId): ?array
+    {
+        return fetch_one('SELECT * FROM users WHERE google_id = :google_id LIMIT 1', [':google_id' => $googleId]);
+    }
+
+    public function all(): array
+    {
+        return array_map(static function (array $row): array {
+            unset($row['password'], $row['remember_token'], $row['otp_code']);
+            $row['is_active'] = (bool) $row['is_active'];
+            $row['photo_url'] = storage_url($row['photo_path']);
+            return $row;
+        }, fetch_all('SELECT * FROM users ORDER BY name ASC'));
+    }
+
+    public function create(array $data): array
+    {
+        $id = $data['id'] ?? uuid_v4();
+        $username = $data['username'] ?? $this->makeUsernameFromEmail((string) ($data['email'] ?? ''));
+        $password = (string) ($data['password'] ?? '');
+        $role = $data['role'] ?? 'customer';
+        $isActive = array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true;
+        $email = !empty($data['email']) ? strtolower((string) $data['email']) : null;
+        $emailVerified = array_key_exists('email_verified_at', $data)
+            ? $data['email_verified_at']
+            : ($email ? now() : null);
+
+        execute_sql(
+            'INSERT INTO users (id, name, username, email, email_verified_at, role, is_active, password, photo_path, google_id, created_at, updated_at)
+             VALUES (:id, :name, :username, :email, :email_verified_at, :role, :is_active, :password, :photo_path, :google_id, NOW(), NOW())',
+            [
+                ':id' => $id,
+                ':name' => $data['name'],
+                ':username' => $username,
+                ':email' => $email,
+                ':email_verified_at' => $emailVerified,
+                ':role' => $role,
+                ':is_active' => $isActive ? 1 : 0,
+                ':password' => password_hash($password, PASSWORD_BCRYPT),
+                ':photo_path' => $data['photo_path'] ?? null,
+                ':google_id' => $data['google_id'] ?? null,
+            ]
+        );
+
+        return $this->find($id) ?? [];
+    }
+
+    public function update(string $id, array $data): array
+    {
+        $user = $this->find($id);
+        if (!$user) {
+            throw new RuntimeException('User tidak ditemukan.');
+        }
+
+        $fields = [];
+        $params = [':id' => $id];
+        foreach (['name', 'username', 'email', 'role', 'photo_path', 'google_id'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $fields[] = "{$field} = :{$field}";
+                $params[':' . $field] = $data[$field] !== '' ? $data[$field] : null;
+            }
+        }
+        if (array_key_exists('is_active', $data)) {
+            $fields[] = 'is_active = :is_active';
+            $params[':is_active'] = $data['is_active'] ? 1 : 0;
+        }
+        if (!empty($data['password'])) {
+            $fields[] = 'password = :password';
+            $params[':password'] = password_hash((string) $data['password'], PASSWORD_BCRYPT);
+        }
+        if (array_key_exists('email_verified_at', $data)) {
+            $fields[] = 'email_verified_at = :email_verified_at';
+            $params[':email_verified_at'] = $data['email_verified_at'];
+        }
+        if (array_key_exists('otp_code', $data)) {
+            $fields[] = 'otp_code = :otp_code';
+            $params[':otp_code'] = $data['otp_code'];
+        }
+        if (array_key_exists('otp_expires_at', $data)) {
+            $fields[] = 'otp_expires_at = :otp_expires_at';
+            $params[':otp_expires_at'] = $data['otp_expires_at'];
+        }
+        if (array_key_exists('otp_attempts', $data)) {
+            $fields[] = 'otp_attempts = :otp_attempts';
+            $params[':otp_attempts'] = (int) $data['otp_attempts'];
+        }
+
+        if ($fields) {
+            $fields[] = 'updated_at = NOW()';
+            execute_sql('UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id', $params);
+        }
+
+        return $this->find($id) ?? [];
+    }
+
+    public function delete(string $id): void
+    {
+        execute_sql('DELETE FROM users WHERE id = :id', [':id' => $id]);
+    }
+
+    public function makeUsernameFromEmail(string $email): string
+    {
+        $base = slugify(strstr($email, '@', true) ?: 'customer');
+        $base = substr($base ?: 'customer', 0, 20);
+        $username = $base;
+        $counter = 1;
+        while (fetch_one('SELECT id FROM users WHERE username = :username LIMIT 1', [':username' => $username])) {
+            $username = $base . $counter;
+            $counter++;
+        }
+        return $username;
+    }
+
+    public function markVerified(string $id): void
+    {
+        execute_sql(
+            'UPDATE users SET email_verified_at = NOW(), otp_code = NULL, otp_expires_at = NULL, otp_attempts = 0, updated_at = NOW() WHERE id = :id',
+            [':id' => $id]
+        );
     }
 }

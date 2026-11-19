@@ -1,110 +1,101 @@
 <?php
-header('Content-Type: application/json');
+declare(strict_types=1);
+
 require_once __DIR__ . '/../config/config.php';
 
-if (!isLoggedIn()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
-}
+api_handle(function (): void {
+    $action = (string) ($_GET['action'] ?? 'list');
+    $input = request_input();
 
-$database = new Database();
-$db = $database->getConnection();
-if (!$db) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database connection failed']);
-    exit;
-}
+    if ($action === 'list') {
+        $tableModel = new Table();
+        $txModel = new Transaction();
+        $txModel->autoCheckoutExpired();
+        json_ok([
+            'data' => [
+                'tables' => $tableModel->allWithActiveAndRecentTransactions(),
+                'packages' => (new Package())->all(),
+                'fnbItems' => (new FnbItem())->all(),
+                'upcomingBookings' => $txModel->upcomingBookings(),
+                'server_time' => now(),
+            ],
+        ]);
+    }
 
-$tableModel = new Table($db);
-$packageModel = new Package($db);
-$fnbModel = new FnbItem($db);
-$txModel = new Transaction($db);
+    require_login();
+    require_role(['admin', 'kasir']);
+    require_method('POST');
+    verify_csrf();
 
-$action = $_GET['action'] ?? 'list';
+    $user = current_user();
+    $txModel = new Transaction();
+    $tableModel = new Table();
 
-try {
     switch ($action) {
-        case 'list':
-            // Auto checkout meja yang sudah lewat batas waktu (sesuai poolstream)
-            $txModel->autoCheckoutExpired();
-
-            $tables = $tableModel->getAllWithActiveAndRecentTransactions();
-            $packages = $packageModel->getAll();
-            $fnbItems = $fnbModel->getAll();
-
-            echo json_encode([
-                'success' => true,
-                'data' => [
-                    'tables' => $tables,
-                    'packages' => $packages,
-                    'fnbItems' => $fnbItems,
-                    'server_time' => date('Y-m-d H:i:s')
-                ]
-            ]);
-            break;
-
         case 'start':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Method not allowed");
-            }
-            $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $tableId = $input['table_id'] ?? null;
-            $customerName = trim($input['customer_name'] ?? '');
-            $packageId = $input['package_id'] ?? null;
-            $durationHours = floatval($input['duration_hours'] ?? 1);
-            $items = $input['items'] ?? [];
+            $tableId = (string) ($_GET['id'] ?? $input['table_id'] ?? '');
+            $customerName = trim((string) ($input['customer_name'] ?? ''));
+            $packageId = (int) ($input['package_id'] ?? 0);
+            $duration = (float) ($input['duration_hours'] ?? 0);
+            $items = is_array($input['items'] ?? null) ? $input['items'] : [];
 
-            if (empty($tableId) || empty($customerName) || empty($packageId) || $durationHours <= 0) {
-                throw new Exception("Data form tidak lengkap.");
+            if ($tableId === '' || $customerName === '' || $packageId <= 0 || $duration < 0.5) {
+                json_error(['customer_name' => 'Lengkapi nama, paket, dan durasi minimal 0.5 jam.']);
             }
 
-            $userId = $_SESSION['user_id'] ?? '019f684b-9232-7270-b76c-0808bde4bacd';
-            $txId = $txModel->startSession($tableId, $userId, $customerName, $packageId, $durationHours, $items);
-
-            echo json_encode(['success' => true, 'message' => 'Sesi meja berhasil dimulai!', 'transaction_id' => $txId]);
+            $tx = $txModel->startSession($tableId, (string) $user['id'], $customerName, $packageId, $duration, $items);
+            flash('success', 'Sesi meja berhasil dimulai.');
+            json_ok(['transaction' => $tx], 'Sesi meja berhasil dimulai.', 'dashboard.php');
             break;
 
         case 'update':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Method not allowed");
-            }
-            $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $tableId = $input['table_id'] ?? null;
-            $txId = $input['transaction_id'] ?? null;
-            $packageId = $input['package_id'] ?? null;
-            $durationHours = floatval($input['duration_hours'] ?? 1);
-            $items = $input['items'] ?? [];
+            $tableId = (string) ($_GET['id'] ?? $input['table_id'] ?? '');
+            $transactionId = (int) ($_GET['transaction'] ?? $input['transaction_id'] ?? 0);
+            $packageId = (int) ($input['package_id'] ?? 0);
+            $duration = (float) ($input['duration_hours'] ?? 0);
+            $items = is_array($input['items'] ?? null) ? $input['items'] : [];
 
-            if (empty($tableId) || empty($txId) || empty($packageId)) {
-                throw new Exception("Parameter tidak valid.");
+            if ($tableId === '' || $transactionId <= 0 || $packageId <= 0 || $duration <= 0) {
+                json_error(['duration_hours' => 'Parameter sesi tidak valid.']);
             }
 
-            $txModel->updateSession($tableId, $txId, $packageId, $durationHours, $items);
-            echo json_encode(['success' => true, 'message' => 'Sesi pesanan berhasil diperbarui!']);
+            $txModel->updateSession($tableId, $transactionId, $packageId, $duration, $items);
+            flash('success', 'Sesi berhasil diperbarui.');
+            json_ok([], 'Sesi berhasil diperbarui.', 'dashboard.php');
             break;
 
         case 'stop':
-            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-                throw new Exception("Method not allowed");
+            $tableId = (string) ($_GET['id'] ?? $input['table_id'] ?? '');
+            if ($tableId === '') {
+                json_error(['table_id' => 'Meja tidak ditemukan.']);
             }
-            $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-            $tableId = $input['table_id'] ?? null;
-
-            if (empty($tableId)) {
-                throw new Exception("Table ID tidak ditemukan.");
-            }
-
             $tx = $txModel->stopSession($tableId);
-            echo json_encode(['success' => true, 'message' => 'Meja berhasil dihentikan / checkout.', 'transaction' => $tx]);
+            flash('success', 'Meja berhasil dihentikan / checkout.');
+            json_ok(['transaction' => $tx], 'Meja berhasil dihentikan / checkout.', 'dashboard.php');
+            break;
+
+        case 'start-booking':
+            $transactionId = (int) ($_GET['id'] ?? $input['transaction_id'] ?? 0);
+            if ($transactionId <= 0) {
+                json_error(['booking' => 'Booking tidak ditemukan.']);
+            }
+            $booking = $txModel->startBooking($transactionId);
+            flash('success', 'Booking ' . $booking['customer_name'] . ' berhasil dimulai.');
+            json_ok(['transaction' => $booking], null, 'dashboard.php');
+            break;
+
+        case 'toggle-light':
+            $tableId = (string) ($_GET['id'] ?? $input['table_id'] ?? '');
+            $raw = $tableModel->findRaw($tableId);
+            if (!$raw) {
+                json_error(['table_id' => 'Meja tidak ditemukan.']);
+            }
+            $isOn = RelayService::toggle($raw);
+            flash('success', 'Lampu ' . $raw['name'] . ' berhasil ' . ($isOn ? 'dinyalakan' : 'dimatikan') . '.');
+            json_ok(['is_light_on' => $isOn], null, 'dashboard.php');
             break;
 
         default:
-            http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'Action tidak dikenal']);
-            break;
+            json_error('Aksi tidak dikenal.', 404);
     }
-} catch (Exception $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-}
+});

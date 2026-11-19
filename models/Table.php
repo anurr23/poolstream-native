@@ -1,100 +1,145 @@
 <?php
-class Table {
-    private $conn;
-    private $table_name = "tables";
+declare(strict_types=1);
 
-    public function __construct($db) {
-        $this->conn = $db;
+class Table
+{
+    public function __construct(private ?PDO $db = null)
+    {
+        $this->db = $db ?? db();
     }
 
-    public function getAllWithActiveAndRecentTransactions() {
-        // Ambil semua meja
-        $query = "SELECT id, name, status, relay_channel FROM " . $this->table_name . " ORDER BY CAST(SUBSTRING_INDEX(name, ' ', -1) AS UNSIGNED), name ASC";
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
-        $tables = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    public function all(): array
+    {
+        $rows = fetch_all('SELECT * FROM tables');
+        usort($rows, static fn (array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+        return array_map(static fn (array $row): array => shape_table($row), $rows);
+    }
 
-        foreach ($tables as &$table) {
-            // Ambil transaksi aktif (jika ada)
-            $qActive = "SELECT t.*, p.name as package_name, p.price as package_price 
-                        FROM transactions t 
-                        LEFT JOIN packages p ON t.package_id = p.id 
-                        WHERE t.table_id = :table_id AND t.status = 'active' 
-                        LIMIT 1";
-            $stmtAct = $this->conn->prepare($qActive);
-            $stmtAct->bindParam(':table_id', $table['id']);
-            $stmtAct->execute();
-            $activeTx = $stmtAct->fetch(PDO::FETCH_ASSOC);
+    public function find(string $id): ?array
+    {
+        $row = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $id]);
+        return $row ? shape_table($row) : null;
+    }
 
-            if ($activeTx) {
-                // Format ISO timestamps dengan timezone agar JS tidak salah hitung zona waktu
-                if (!empty($activeTx['expected_end_time'])) {
-                    $activeTx['expected_end_time_iso'] = date('c', strtotime($activeTx['expected_end_time']));
-                }
-                if (!empty($activeTx['start_time'])) {
-                    $activeTx['start_time_iso'] = date('c', strtotime($activeTx['start_time']));
-                }
+    public function findRaw(string $id): ?array
+    {
+        return fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $id]);
+    }
 
-                // Ambil items FnB untuk transaksi aktif
-                $qItems = "SELECT ti.*, f.name as fnb_name, f.category as fnb_category, f.price as fnb_price, f.image_path 
-                           FROM transaction_items ti 
-                           LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                           WHERE ti.transaction_id = :tx_id";
-                $stmtItems = $this->conn->prepare($qItems);
-                $stmtItems->bindParam(':tx_id', $activeTx['id']);
-                $stmtItems->execute();
-                $activeTx['items'] = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-                $table['transactions'] = [$activeTx];
-            } else {
-                $table['transactions'] = [];
-            }
+    public function itemsForTransaction(int $transactionId): array
+    {
+        $rows = fetch_all(
+            "SELECT ti.*, f.name AS fnb_name, f.category AS fnb_category, f.price AS fnb_price, f.image_path AS fnb_image_path
+             FROM transaction_items ti
+             LEFT JOIN fnb_items f ON f.id = ti.fnb_item_id
+             WHERE ti.transaction_id = :id
+             ORDER BY ti.id ASC",
+            [':id' => $transactionId]
+        );
 
-            // Ambil recent transactions (maks 10 terakhir)
-            $qRecent = "SELECT t.*, p.name as package_name, p.price as package_price 
-                        FROM transactions t 
-                        LEFT JOIN packages p ON t.package_id = p.id 
-                        WHERE t.table_id = :table_id 
-                        ORDER BY t.created_at DESC LIMIT 10";
-            $stmtRec = $this->conn->prepare($qRecent);
-            $stmtRec->bindParam(':table_id', $table['id']);
-            $stmtRec->execute();
-            $recentTxs = $stmtRec->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(static fn (array $row): array => shape_transaction_item($row), $rows);
+    }
 
-            foreach ($recentTxs as &$rtx) {
-                $stmtItems2 = $this->conn->prepare("SELECT ti.*, f.name as fnb_name, f.category, f.price, f.image_path 
-                                                    FROM transaction_items ti 
-                                                    LEFT JOIN fnb_items f ON ti.fnb_item_id = f.id 
-                                                    WHERE ti.transaction_id = :tx_id");
-                $stmtItems2->bindParam(':tx_id', $rtx['id']);
-                $stmtItems2->execute();
-                $rtx['items'] = $stmtItems2->fetchAll(PDO::FETCH_ASSOC);
-            }
-            $table['recent_transactions'] = $recentTxs;
+    public function activeTransaction(string $tableId): ?array
+    {
+        $row = fetch_one(
+            "SELECT t.*, p.name AS package_name, p.price AS package_price
+             FROM transactions t
+             LEFT JOIN packages p ON p.id = t.package_id
+             WHERE t.table_id = :table_id AND t.status = 'active'
+             ORDER BY t.created_at DESC LIMIT 1",
+            [':table_id' => $tableId]
+        );
+
+        if (!$row) {
+            return null;
         }
 
+        $package = $row['package_id'] ? [
+            'id' => (int) $row['package_id'],
+            'name' => $row['package_name'],
+            'price' => (string) ($row['package_price'] ?? '0'),
+        ] : null;
+
+        return shape_transaction($row, null, $package, null, $this->itemsForTransaction((int) $row['id']));
+    }
+
+    public function recentTransactions(string $tableId): array
+    {
+        $rows = fetch_all(
+            "SELECT t.*, p.name AS package_name, p.price AS package_price
+             FROM transactions t
+             LEFT JOIN packages p ON p.id = t.package_id
+             WHERE t.table_id = :table_id
+               AND (t.status = 'active' OR t.created_at >= DATE_SUB(NOW(), INTERVAL 48 HOUR) OR t.end_time >= DATE_SUB(NOW(), INTERVAL 48 HOUR))
+             ORDER BY t.created_at DESC",
+            [':table_id' => $tableId]
+        );
+
+        return array_map(function (array $row): array {
+            $package = $row['package_id'] ? [
+                'id' => (int) $row['package_id'],
+                'name' => $row['package_name'],
+                'price' => (string) ($row['package_price'] ?? '0'),
+            ] : null;
+            return shape_transaction($row, null, $package, null, $this->itemsForTransaction((int) $row['id']));
+        }, $rows);
+    }
+
+    public function allWithActiveAndRecentTransactions(): array
+    {
+        $tables = $this->all();
+        foreach ($tables as &$table) {
+            $active = $this->activeTransaction($table['id']);
+            $table['transactions'] = $active ? [$active] : [];
+            $table['recent_transactions'] = $this->recentTransactions($table['id']);
+        }
+        unset($table);
         return $tables;
     }
 
-    public function addTable($name, $relay_channel = null) {
-        $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x', mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000, mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff));
-        $stmt = $this->conn->prepare("INSERT INTO " . $this->table_name . " (id, name, status, relay_channel, created_at, updated_at) VALUES (:id, :name, 'ready', :relay_channel, NOW(), NOW())");
-        return $stmt->execute([
+    public function create(string $name, int $relayChannel): string
+    {
+        $id = uuid_v4();
+        execute_sql(
+            "INSERT INTO tables (id, name, relay_channel, status, is_light_on, created_at, updated_at)
+             VALUES (:id, :name, :relay_channel, 'inactive', 0, NOW(), NOW())",
+            [':id' => $id, ':name' => $name, ':relay_channel' => $relayChannel]
+        );
+        return $id;
+    }
+
+    public function update(string $id, string $name, int $relayChannel): void
+    {
+        execute_sql('UPDATE tables SET name = :name, relay_channel = :relay_channel, updated_at = NOW() WHERE id = :id', [
             ':id' => $id,
             ':name' => $name,
-            ':relay_channel' => $relay_channel
+            ':relay_channel' => $relayChannel,
         ]);
     }
 
-    public function deleteTable($id) {
-        $stmtCheck = $this->conn->prepare("SELECT status FROM " . $this->table_name . " WHERE id = :id LIMIT 1");
-        $stmtCheck->execute([':id' => $id]);
-        $tbl = $stmtCheck->fetch(PDO::FETCH_ASSOC);
-
-        if ($tbl && $tbl['status'] === 'active') {
-            throw new Exception("Meja sedang digunakan dalam sesi aktif dan tidak dapat dihapus.");
+    public function delete(string $id): void
+    {
+        $active = fetch_one("SELECT id FROM transactions WHERE table_id = :id AND status = 'active' LIMIT 1", [':id' => $id]);
+        if ($active) {
+            throw new RuntimeException('Meja sedang digunakan dalam sesi aktif dan tidak dapat dihapus.');
         }
+        execute_sql('DELETE FROM tables WHERE id = :id', [':id' => $id]);
+    }
 
-        $stmt = $this->conn->prepare("DELETE FROM " . $this->table_name . " WHERE id = :id");
-        return $stmt->execute([':id' => $id]);
+    public function setStatus(string $id, string $status): void
+    {
+        execute_sql('UPDATE tables SET status = :status, updated_at = NOW() WHERE id = :id', [
+            ':id' => $id,
+            ':status' => $status,
+        ]);
+    }
+
+    public function setLightState(string $id, bool $on): void
+    {
+        execute_sql('UPDATE tables SET is_light_on = :is_light_on, updated_at = NOW() WHERE id = :id', [
+            ':id' => $id,
+            ':is_light_on' => $on ? 1 : 0,
+        ]);
     }
 }

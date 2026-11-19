@@ -1,0 +1,12 @@
+{
+    "name": "poolstream/native",
+    "description": "PoolStream native PHP application",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "dompdf/dompdf": "^3.1"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

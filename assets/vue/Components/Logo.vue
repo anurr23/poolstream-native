@@ -1,0 +1,46 @@
+<script setup>
+defineProps({
+    size: { type: [Number, String], default: 44 },
+});
+</script>
+
+<template>
+    <svg
+        :width="size"
+        :height="size"
+        viewBox="0 0 64 64"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        class="bb-logo"
+        role="img"
+        aria-label="PoolStream"
+    >
+        <defs>
+            <linearGradient id="bbLogoBall" x1="7.5" y1="15.5" x2="44.5" y2="52.5" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#818CF8" />
+                <stop offset="0.55" stop-color="#6366F1" />
+                <stop offset="1" stop-color="#8B5CF6" />
+            </linearGradient>
+            <radialGradient id="bbLogoGloss" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(18 24) rotate(48) scale(26)">
+                <stop stop-color="#FFFFFF" stop-opacity="0.45" />
+                <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="bbLogoTrail" x1="30" y1="32" x2="64" y2="32" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#34D399" />
+                <stop offset="1" stop-color="#10B981" stop-opacity="0.35" />
+            </linearGradient>
+        </defs>
+
+        <path d="M33 15.5C42 8 52 5.5 62 6C51.5 9.5 42.5 13.5 38 22.5Z" fill="url(#bbLogoTrail)" />
+        <path d="M40 27C50 23 56 23.5 63 26.5C55 28.5 47 30.5 42 36.5Z" fill="url(#bbLogoTrail)" opacity="0.85" />
+        <path d="M34.5 48.5C43 51.5 51 53.5 61 55.5C52 55.5 43 53 37 40.5Z" fill="url(#bbLogoTrail)" opacity="0.7" />
+
+        <circle cx="26" cy="34" r="19" fill="url(#bbLogoBall)" />
+        <circle cx="26" cy="34" r="19" fill="url(#bbLogoGloss)" />
+        <circle cx="26" cy="34" r="17.8" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="1.2" />
+
+        <circle cx="26" cy="34" r="8.6" fill="#FFFFFF" />
+        <circle cx="26" cy="30.7" r="2.3" stroke="#4F46E5" stroke-width="1.55" />
+        <circle cx="26" cy="37" r="2.85" stroke="#4F46E5" stroke-width="1.55" />
+    </svg>
+</template>

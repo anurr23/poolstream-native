@@ -1,6 +1,15 @@
 <?php
-require_once __DIR__ . '/config/config.php';
-requireLogin();
+declare(strict_types=1);
 
-// Bridge URL fnb-orders.php -> kasir.php
-require __DIR__ . '/kasir.php';
+require_once __DIR__ . '/config/config.php';
+
+require_role(['admin', 'kasir']);
+
+$txModel = new Transaction();
+$txModel->autoCheckoutExpired();
+
+render_page('Fnb/Index', [
+    'fnbItems' => (new FnbItem())->all(),
+    'fnbOrders' => $txModel->getActiveFnbOrders(),
+    'fnbHistory' => $txModel->getFnbHistory(50),
+], 'Pemesanan F&B');
