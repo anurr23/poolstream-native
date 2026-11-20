@@ -13,11 +13,12 @@ function closeDropdowns(except = null) {
     document.querySelectorAll('.dropdown-menu').forEach((menu) => {
         if (except && menu === except) return;
         menu.classList.remove('show');
+        menu.removeAttribute('data-bs-popper');
         // Layout me-render ulang setiap detik (jam), dan patch Vue dapat
         // menghapus class .show. Inline style tidak ikut di-patch sehingga
         // dropdown tetap bisa ditutup dengan andal.
         if (menu.style.display === 'block') menu.style.display = 'none';
-        const toggle = menu.parentElement?.querySelector('[data-bs-toggle="dropdown"]');
+        const toggle = menu.parentElement?.querySelector('[data-bs-toggle="dropdown"], [data-poolstream-toggle="1"]');
         if (toggle) toggle.setAttribute('aria-expanded', 'false');
     });
 }
@@ -51,6 +52,11 @@ function initDropdowns() {
             const isOpen = menu.classList.contains('show') || menu.style.display === 'block';
             const willOpen = !isOpen;
             closeDropdowns(menu);
+            if (willOpen) {
+                menu.setAttribute('data-bs-popper', 'static');
+            } else {
+                menu.removeAttribute('data-bs-popper');
+            }
             menu.classList.toggle('show', willOpen);
             menu.style.display = willOpen ? 'block' : 'none';
             toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
