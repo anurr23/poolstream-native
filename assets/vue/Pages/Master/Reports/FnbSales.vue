@@ -12,7 +12,12 @@ const props = defineProps({
 });
 
 const fpConfig = { dateFormat: 'Y-m-d', altInput: true, altFormat: 'd M Y' };
-const toYMD = (d) => d.toISOString().slice(0, 10);
+const toYMD = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const startDate = ref(props.startDate || '');
 const endDate = ref(props.endDate || '');

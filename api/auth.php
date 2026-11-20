@@ -159,7 +159,7 @@ api_handle(function (): void {
                 json_error('Akses ditolak.', 403);
             }
             if (!empty($user['email_verified_at'])) {
-                json_ok([], null, 'customer-booking.php');
+                json_ok([], null, 'customer-home.php');
             }
             if (time() - (int) ($_SESSION['otp_resend_at'] ?? 0) < 60) {
                 json_error(['code' => 'Tunggu 60 detik sebelum mengirim ulang kode.']);

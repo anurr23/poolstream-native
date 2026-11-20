@@ -124,7 +124,7 @@ api_handle(function (): void {
         }
 
         try {
-            $imagePath = upload_image('image', 'fnb_images', ['jpg', 'jpeg', 'png', 'webp', 'svg'], 2097152);
+            $imagePath = upload_image('image', 'fnb_images', ['jpg', 'jpeg', 'png', 'webp'], 2097152);
         } catch (Throwable $e) {
             $errors['image'] = $e->getMessage();
             $imagePath = null;

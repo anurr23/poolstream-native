@@ -77,7 +77,7 @@ const now = ref(Date.now());
 let tickTimer = null;
 let refreshTimer = null;
 
-const isActive = computed(() => nextBooking.value?.status === 'active');
+const isActive = computed(() => props.nextBooking?.status === 'active');
 
 const formatDuration = (ms) => {
     const total = Math.max(0, Math.floor(ms / 1000));
@@ -88,13 +88,13 @@ const formatDuration = (ms) => {
 };
 
 const elapsedLabel = computed(() => {
-    if (!isActive.value || !nextBooking.value?.start_time) return '00:00:00';
-    return formatDuration(now.value - new Date(nextBooking.value.start_time).getTime());
+    if (!isActive.value || !props.nextBooking?.start_time) return '00:00:00';
+    return formatDuration(now.value - new Date(props.nextBooking.start_time).getTime());
 });
 
 const remainingMs = computed(() => {
-    if (!isActive.value || !bookingEnd(nextBooking.value)) return 0;
-    return new Date(bookingEnd(nextBooking.value)).getTime() - now.value;
+    if (!isActive.value || !bookingEnd(props.nextBooking)) return 0;
+    return new Date(bookingEnd(props.nextBooking)).getTime() - now.value;
 });
 
 const remainingLabel = computed(() => formatDuration(remainingMs.value));
@@ -103,8 +103,8 @@ const isOver = computed(() => isActive.value && remainingMs.value <= 0);
 
 const sessionProgress = computed(() => {
     if (!isActive.value) return 0;
-    const start = new Date(nextBooking.value?.start_time).getTime();
-    const end = new Date(bookingEnd(nextBooking.value)).getTime();
+    const start = new Date(props.nextBooking?.start_time).getTime();
+    const end = new Date(bookingEnd(props.nextBooking)).getTime();
     if (!start || !end || end <= start) return 0;
     return Math.min(100, Math.max(0, ((now.value - start) / (end - start)) * 100));
 });

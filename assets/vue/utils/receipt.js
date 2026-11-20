@@ -3,6 +3,17 @@ export const printReceipt = (transaction, kasirName = 'Kasir') => {
     const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+    // Struk ditulis sebagai HTML mentah ke window baru, jadi semua nilai yang
+    // berasal dari input pengguna wajib di-escape agar tidak menjadi XSS.
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+    }[char]));
+    const safeKasir = esc(kasirName);
+
     const fmtPrice = (val) => {
         const n = Number(val) || 0;
         return n.toLocaleString('id-ID');
@@ -36,7 +47,7 @@ export const printReceipt = (transaction, kasirName = 'Kasir') => {
             const name = item.fnb_item?.name || item.name || 'Item';
             itemsHtml += `
                 <tr>
-                    <td style="padding: 2px 0;">${name} x${item.quantity}</td>
+                    <td style="padding: 2px 0;">${esc(name)} x${esc(item.quantity)}</td>
                     <td style="padding: 2px 0; text-align: right;">${fmtPrice(item.subtotal)}</td>
                 </tr>
             `;
@@ -53,7 +64,7 @@ export const printReceipt = (transaction, kasirName = 'Kasir') => {
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Struk #${transaction.id || ''}</title>
+    <title>Struk #${esc(transaction.id)}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -93,11 +104,11 @@ export const printReceipt = (transaction, kasirName = 'Kasir') => {
     <div class="double-divider"></div>
 
     <table>
-        <tr><td>No</td><td class="right">#${transaction.id || '-'}</td></tr>
+        <tr><td>No</td><td class="right">#${esc(transaction.id || '-')}</td></tr>
         <tr><td>Tanggal</td><td class="right">${dateStr} ${timeStr}</td></tr>
-        <tr><td>Kasir</td><td class="right">${kasirName}</td></tr>
-        <tr><td>Customer</td><td class="right">${transaction.customer_name || '-'}</td></tr>
-        ${isBilliard && transaction.table_name ? `<tr><td>Meja</td><td class="right">${transaction.table_name}</td></tr>` : ''}
+        <tr><td>Kasir</td><td class="right">${safeKasir}</td></tr>
+        <tr><td>Customer</td><td class="right">${esc(transaction.customer_name || '-')}</td></tr>
+        ${isBilliard && transaction.table_name ? `<tr><td>Meja</td><td class="right">${esc(transaction.table_name)}</td></tr>` : ''}
     </table>
 
     ${isBilliard ? `
@@ -105,7 +116,7 @@ export const printReceipt = (transaction, kasirName = 'Kasir') => {
         <div class="bold" style="margin-bottom: 4px;">BILIAR</div>
         <table>
             <tr>
-                <td>${transaction.package?.name || 'Paket'} x ${calculateDuration(transaction)}</td>
+                <td>${esc(transaction.package?.name || 'Paket')} x ${calculateDuration(transaction)}</td>
                 <td class="right">${fmtPrice(billiardCost)}</td>
             </tr>
         </table>

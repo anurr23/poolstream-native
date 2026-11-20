@@ -4,6 +4,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/config.php';
 
 api_handle(function (): void {
+    require_login();
+    require_role(['admin', 'kasir']);
+
     $action = (string) ($_GET['action'] ?? 'list');
     $input = request_input();
 
@@ -22,8 +25,6 @@ api_handle(function (): void {
         ]);
     }
 
-    require_login();
-    require_role(['admin', 'kasir']);
     require_method('POST');
     verify_csrf();
 
@@ -55,8 +56,8 @@ api_handle(function (): void {
             $duration = (float) ($input['duration_hours'] ?? 0);
             $items = is_array($input['items'] ?? null) ? $input['items'] : [];
 
-            if ($tableId === '' || $transactionId <= 0 || $packageId <= 0 || $duration <= 0) {
-                json_error(['duration_hours' => 'Parameter sesi tidak valid.']);
+            if ($tableId === '' || $transactionId <= 0 || $packageId <= 0 || $duration < 0.5) {
+                json_error(['duration_hours' => 'Parameter sesi tidak valid. Durasi minimal 0.5 jam.']);
             }
 
             $txModel->updateSession($tableId, $transactionId, $packageId, $duration, $items);

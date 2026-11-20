@@ -79,7 +79,7 @@ onUnmounted(() => {
         <div v-if="mailLogMode" class="alert alert-warning rounded-3 small mb-4">
             <i class="bi bi-info-circle me-1"></i>
             Mode lokal: email belum dikonfigurasi. Kode OTP juga tercatat di
-            <code>storage/logs/laravel.log</code>.
+            <code>storage/logs/mail.log</code>.
         </div>
 
         <div v-if="$page.props.flash?.success" class="alert alert-success rounded-3 small mb-4">

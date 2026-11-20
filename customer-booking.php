@@ -6,8 +6,8 @@ require_once __DIR__ . '/config/config.php';
 require_login();
 require_customer_verified();
 $user = current_user();
-if (!$user || $user['role'] !== 'customer') {
-    redirect('index.php');
+if (!$user) {
+    redirect('login.php');
 }
 
 render_page('Customer/Booking', [

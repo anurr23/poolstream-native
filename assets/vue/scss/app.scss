@@ -605,8 +605,14 @@ body {
 }
 @media (max-width: 575.98px) {
     .bb-meja-toolbar {
-        flex-wrap: nowrap;
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .bb-meja-toolbar > .d-sm-none {
+        flex: 0 0 100%;
+        margin-left: 0 !important;
+        text-align: right;
+        line-height: 1;
     }
     .bb-seg {
         flex-wrap: nowrap;
@@ -614,6 +620,7 @@ body {
         scrollbar-width: none;
         gap: 0.15rem;
         padding: 0.2rem;
+        max-width: 100%;
         -webkit-overflow-scrolling: touch;
         &::-webkit-scrollbar {
             display: none;

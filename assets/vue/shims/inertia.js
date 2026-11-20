@@ -195,10 +195,19 @@ async function request(method, url, data = {}, options = {}) {
             return;
         }
 
-        const formData = new FormData();
-        Object.entries(data || {}).forEach(([key, value]) => appendValue(formData, key, value));
-        formData.append('_method', actualMethod);
-        formData.append('_token', csrfToken());
+        let formData;
+        if (data instanceof FormData) {
+            // Halaman yang sudah menyusun FormData sendiri (mis. upload foto user)
+            // harus dikirim apa adanya, bukan diubah menjadi objek kosong.
+            formData = data;
+            if (!formData.has('_method')) formData.append('_method', actualMethod);
+            if (!formData.has('_token')) formData.append('_token', csrfToken());
+        } else {
+            formData = new FormData();
+            Object.entries(data || {}).forEach(([key, value]) => appendValue(formData, key, value));
+            formData.append('_method', actualMethod);
+            formData.append('_token', csrfToken());
+        }
 
         response = await fetch(url, {
             method: 'POST',

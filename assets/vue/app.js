@@ -10,48 +10,59 @@ const loader = pages[`./Pages/${component}.vue`];
 const showRuntimeError = new URLSearchParams(location.search).has('debug');
 
 function closeDropdowns(except = null) {
-    document.querySelectorAll('.dropdown-menu.show').forEach((menu) => {
+    document.querySelectorAll('.dropdown-menu').forEach((menu) => {
         if (except && menu === except) return;
         menu.classList.remove('show');
+        // Layout me-render ulang setiap detik (jam), dan patch Vue dapat
+        // menghapus class .show. Inline style tidak ikut di-patch sehingga
+        // dropdown tetap bisa ditutup dengan andal.
+        if (menu.style.display === 'block') menu.style.display = 'none';
         const toggle = menu.parentElement?.querySelector('[data-bs-toggle="dropdown"]');
-        toggle?.setAttribute('aria-expanded', 'false');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
     });
 }
 
 /**
  * Bootstrap data-api dropdown tidak selalu aktif saat module dievaluasi lewat
- * Vite ESM. Fallback kecil ini memastikan dropdown sidebar/header tetap bekerja.
+ * Vite ESM. Delegasi global ini memastikan dropdown sidebar/header selalu
+ * terbuka tepat satu kali, tanpa konflik dengan handler Bootstrap.
  */
 function initDropdowns() {
-    document.querySelectorAll('.dropdown').forEach((root) => {
-        if (root.dataset.poolstreamDropdown === '1') return;
-        const toggle = root.querySelector('[data-bs-toggle="dropdown"]');
-        const menu = root.querySelector('.dropdown-menu');
-        if (!toggle || !menu) return;
-        root.dataset.poolstreamDropdown = '1';
+    if (window.__poolstreamDropdownInit) return;
+    window.__poolstreamDropdownInit = true;
 
-        toggle.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const willOpen = !menu.classList.contains('show');
-            closeDropdowns(menu);
-            if (willOpen) {
-                menu.classList.add('show');
-                toggle.setAttribute('aria-expanded', 'true');
-            } else {
-                menu.classList.remove('show');
-                toggle.setAttribute('aria-expanded', 'false');
-            }
-        }, true);
+    // Lepas atribut Bootstrap agar data-api tidak ikut men-toggle menu yang
+    // sama (konflik handler menyebabkan menu langsung tertutup lagi).
+    document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach((toggle) => {
+        toggle.setAttribute('data-poolstream-toggle', '1');
+        toggle.removeAttribute('data-bs-toggle');
     });
 
-    if (!window.__poolstreamDropdownOutside) {
-        window.__poolstreamDropdownOutside = true;
-        document.addEventListener('click', () => closeDropdowns());
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') closeDropdowns();
-        });
-    }
+    document.addEventListener('click', (event) => {
+        const toggle = event.target.closest?.('[data-poolstream-toggle="1"]');
+        if (toggle) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const root = toggle.closest('.dropdown') || toggle.parentElement;
+            const menu = root?.querySelector('.dropdown-menu');
+            if (!menu) return;
+
+            const isOpen = menu.classList.contains('show') || menu.style.display === 'block';
+            const willOpen = !isOpen;
+            closeDropdowns(menu);
+            menu.classList.toggle('show', willOpen);
+            menu.style.display = willOpen ? 'block' : 'none';
+            toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            return;
+        }
+
+        if (!event.target.closest?.('.dropdown')) closeDropdowns();
+    }, true);
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeDropdowns();
+    });
 }
 
 function hideBlockUi() {

@@ -64,10 +64,48 @@ function mask_name(?string $name): string
 
 function normalize_money(mixed $value): float
 {
-    if (is_string($value)) {
-        $value = str_replace(['Rp', '.', ' '], ['', '', ''], $value);
-        $value = str_replace(',', '.', $value);
+    if (is_int($value) || is_float($value)) {
+        return (float) $value;
     }
+
+    $value = trim((string) $value);
+    if ($value === '') {
+        return 0.0;
+    }
+
+    $value = str_replace(['Rp', 'rp', 'RP', ' '], '', $value);
+
+    // Format Indonesia: 25.000,50 -> 25000.50
+    if (str_contains($value, ',') && str_contains($value, '.')) {
+        $value = str_replace('.', '', $value);
+        $value = str_replace(',', '.', $value);
+        return (float) $value;
+    }
+
+    // Format desimal dengan titik: 25000.00 -> 25000
+    if (str_contains($value, ',')) {
+        // Koma dianggap desimal bila hanya 1-2 digit di belakangnya.
+        if (preg_match('/,\d{1,2}$/', $value)) {
+            $value = str_replace(',', '.', $value);
+            return (float) $value;
+        }
+        $value = str_replace(',', '', $value);
+        return (float) $value;
+    }
+
+    if (str_contains($value, '.')) {
+        // Titik ribuan: 25.000 / 2.500.000
+        if (preg_match('/^\d{1,3}(\.\d{3})+$/', $value)) {
+            return (float) str_replace('.', '', $value);
+        }
+        // Titik desimal: 25000.00 / 25000.5
+        if (preg_match('/^\d+\.\d{1,2}$/', $value)) {
+            return (float) $value;
+        }
+        // Titik lain dianggap pemisah ribuan.
+        return (float) str_replace('.', '', $value);
+    }
+
     return (float) $value;
 }
 
@@ -122,7 +160,7 @@ function ensure_dir(string $path): void
  * Simpan file upload ke storage/<folder>/<filename>, kembalikan path relatif
  * yang kompatibel dengan database Laravel (mis. fnb_images/foo.svg).
  */
-function upload_image(string $field, string $folder, array $allowed = ['jpg', 'jpeg', 'png', 'webp', 'svg'], int $maxBytes = 2097152): ?string
+function upload_image(string $field, string $folder, array $allowed = ['jpg', 'jpeg', 'png', 'webp'], int $maxBytes = 2097152): ?string
 {
     if (!isset($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return null;
@@ -139,6 +177,23 @@ function upload_image(string $field, string $folder, array $allowed = ['jpg', 'j
     $ext = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
     if (!in_array($ext, $allowed, true)) {
         throw new RuntimeException('Format foto harus ' . strtoupper(implode(', ', $allowed)) . '.');
+    }
+
+    // Validasi isi file, bukan hanya ekstensi: cegah file non-gambar
+    // (mis. PHP/HTML yang di-rename menjadi .jpg) ikut tersimpan.
+    $mimeMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $tmp = (string) ($file['tmp_name'] ?? '');
+    $mime = '';
+    if ($tmp !== '' && class_exists('finfo')) {
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = (string) $finfo->file($tmp);
+    } elseif ($tmp !== '' && function_exists('getimagesize')) {
+        $info = @getimagesize($tmp);
+        $mime = (string) ($info['mime'] ?? '');
+    }
+    $normalizedExt = $ext === 'jpeg' ? 'jpg' : $ext;
+    if (($mimeMap[$mime] ?? null) !== $normalizedExt) {
+        throw new RuntimeException('Isi file bukan gambar yang valid. Gunakan JPG, PNG, atau WEBP.');
     }
 
     $directory = APP_ROOT . '/storage/' . trim($folder, '/');

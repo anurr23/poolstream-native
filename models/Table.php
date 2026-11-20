@@ -120,9 +120,12 @@ class Table
 
     public function delete(string $id): void
     {
-        $active = fetch_one("SELECT id FROM transactions WHERE table_id = :id AND status = 'active' LIMIT 1", [':id' => $id]);
-        if ($active) {
-            throw new RuntimeException('Meja sedang digunakan dalam sesi aktif dan tidak dapat dihapus.');
+        $busy = fetch_one(
+            "SELECT id FROM transactions WHERE table_id = :id AND status IN ('active','booked') LIMIT 1",
+            [':id' => $id]
+        );
+        if ($busy) {
+            throw new RuntimeException('Meja masih memiliki sesi aktif atau booking yang belum selesai dan tidak dapat dihapus.', 422);
         }
         execute_sql('DELETE FROM tables WHERE id = :id', [':id' => $id]);
     }

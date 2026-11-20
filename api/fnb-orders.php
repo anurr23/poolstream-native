@@ -32,6 +32,14 @@ api_handle(function (): void {
         if ($customerName === '') {
             json_error(['customer_name' => 'Nama pelanggan wajib diisi.']);
         }
+        $validItems = array_filter($items, static function ($item): bool {
+            return is_array($item)
+                && (int) ($item['fnb_item_id'] ?? 0) > 0
+                && (int) ($item['quantity'] ?? 0) > 0;
+        });
+        if (!$validItems) {
+            json_error(['items' => 'Pesanan F&B minimal berisi 1 item.']);
+        }
         $transaction = $txModel->createFnbOrder((string) $user['id'], $customerName, $items);
         flash('success', 'Pesanan F&B berhasil dibuat.');
         json_ok(['transaction' => $transaction], 'Pesanan F&B berhasil dibuat.', 'fnb-orders.php');

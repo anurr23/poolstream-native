@@ -234,7 +234,7 @@ function verify_csrf(): void
             'ok' => false,
             'message' => 'Sesi keamanan tidak valid. Muat ulang halaman.',
             'errors' => ['_token' => 'Sesi keamanan tidak valid. Muat ulang halaman.'],
-        ], 419);
+        ], 403);
     }
 }
 
@@ -274,6 +274,21 @@ function api_handle(callable $callback): void
 {
     try {
         $callback();
+    } catch (PDOException $e) {
+        error_log('[PoolStream API] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        json_response([
+            'ok' => false,
+            'message' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.',
+            'errors' => ['_general' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.'],
+        ], 500);
+    } catch (RuntimeException $e) {
+        // Kesalahan validasi/bisnis dari model: kirim 4xx, bukan 500.
+        $status = $e->getCode() >= 400 && $e->getCode() < 500 ? (int) $e->getCode() : 422;
+        json_response([
+            'ok' => false,
+            'message' => $e->getMessage(),
+            'errors' => ['_general' => $e->getMessage()],
+        ], $status);
     } catch (Throwable $e) {
         error_log('[PoolStream API] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         json_response([
