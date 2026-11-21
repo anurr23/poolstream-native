@@ -61,7 +61,9 @@ class Table
             'price' => (string) ($row['package_price'] ?? '0'),
         ] : null;
 
-        return shape_transaction($row, null, $package, null, $this->itemsForTransaction((int) $row['id']));
+        $txModel = new Transaction();
+        $customer = $txModel->userFor($row['user_id'] ?? null, $row['customer_name'] ?? null);
+        return shape_transaction($row, null, $package, $customer, $this->itemsForTransaction((int) $row['id']));
     }
 
     public function recentTransactions(string $tableId): array
@@ -71,18 +73,21 @@ class Table
              FROM transactions t
              LEFT JOIN packages p ON p.id = t.package_id
              WHERE t.table_id = :table_id
+               AND t.status IN ('active', 'completed')
                AND (t.status = 'active' OR t.created_at >= DATE_SUB(NOW(), INTERVAL 48 HOUR) OR t.end_time >= DATE_SUB(NOW(), INTERVAL 48 HOUR))
              ORDER BY t.created_at DESC",
             [':table_id' => $tableId]
         );
 
-        return array_map(function (array $row): array {
+        $txModel = new Transaction();
+        return array_map(function (array $row) use ($txModel): array {
             $package = $row['package_id'] ? [
                 'id' => (int) $row['package_id'],
                 'name' => $row['package_name'],
                 'price' => (string) ($row['package_price'] ?? '0'),
             ] : null;
-            return shape_transaction($row, null, $package, null, $this->itemsForTransaction((int) $row['id']));
+            $customer = $txModel->userFor($row['user_id'] ?? null, $row['customer_name'] ?? null);
+            return shape_transaction($row, null, $package, $customer, $this->itemsForTransaction((int) $row['id']));
         }, $rows);
     }
 

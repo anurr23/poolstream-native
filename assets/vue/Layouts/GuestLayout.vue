@@ -25,7 +25,7 @@ onMounted(() => {
 <template>
     <div class="bb-auth-wrapper position-relative">
         <!-- Theme Toggle -->
-        <button @click="toggleTheme" class="bb-theme-toggle position-absolute top-0 end-0 m-4" style="z-index: 10;">
+        <button @click="toggleTheme" class="bb-theme-toggle position-fixed top-0 end-0 m-3 m-sm-4" style="z-index: 10;">
             <i :class="isDark ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill'"></i>
         </button>
 

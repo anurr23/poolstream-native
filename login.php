@@ -13,6 +13,5 @@ if (is_logged_in()) {
 
 $status = $_SESSION['_flash']['success'] ?? null;
 render_page('Auth/Login', [
-    'canResetPassword' => true,
     'status' => $status,
 ], 'Log in');

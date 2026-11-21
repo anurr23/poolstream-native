@@ -278,8 +278,8 @@ function api_handle(callable $callback): void
         error_log('[PoolStream API] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         json_response([
             'ok' => false,
-            'message' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.',
-            'errors' => ['_general' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.'],
+            'message' => 'Terjadi kesalahan pada sistem. Silakan coba lagi nanti.',
+            'errors' => ['_general' => 'Terjadi kesalahan pada sistem. Silakan coba lagi nanti.'],
         ], 500);
     } catch (RuntimeException $e) {
         // Kesalahan validasi/bisnis dari model: kirim 4xx, bukan 500.
@@ -293,8 +293,8 @@ function api_handle(callable $callback): void
         error_log('[PoolStream API] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         json_response([
             'ok' => false,
-            'message' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.',
-            'errors' => ['_general' => APP_DEBUG ? $e->getMessage() : 'Terjadi kesalahan pada server.'],
+            'message' => 'Terjadi kesalahan pada sistem. Silakan coba lagi nanti.',
+            'errors' => ['_general' => 'Terjadi kesalahan pada sistem. Silakan coba lagi nanti.'],
         ], 500);
     }
 }

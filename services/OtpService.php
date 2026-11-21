@@ -3,12 +3,30 @@ declare(strict_types=1);
 
 class OtpService
 {
-    public const EXPIRES_MINUTES = 10;
+    public const EXPIRES_MINUTES = 5;
     public const MAX_ATTEMPTS = 5;
+
+    public static function generateCode(): string
+    {
+        return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    }
+
+    public static function sendMail(string $email, string $name, string $code): void
+    {
+        $safeName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+        $body = '<p>Halo ' . $safeName . '!</p>'
+            . '<p>Kode OTP untuk verifikasi email Anda adalah:</p>'
+            . '<p style="font-size:24px;font-weight:700;letter-spacing:6px">' . $code . '</p>'
+            . '<p>Kode ini berlaku selama ' . self::EXPIRES_MINUTES . ' menit.</p>'
+            . '<p>Jika Anda tidak merasa mendaftar di PoolStream, abaikan email ini.</p>'
+            . '<p>Salam, PoolStream</p>';
+
+        MailService::send($email, 'Kode OTP PoolStream', $body);
+    }
 
     public function send(array $user): void
     {
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $code = self::generateCode();
         execute_sql(
             'UPDATE users SET otp_code = :otp_code, otp_expires_at = :otp_expires_at, otp_attempts = 0, updated_at = NOW() WHERE id = :id',
             [
@@ -18,15 +36,7 @@ class OtpService
             ]
         );
 
-        $name = htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8');
-        $body = '<p>Halo ' . $name . '!</p>'
-            . '<p>Kode OTP untuk verifikasi email Anda adalah:</p>'
-            . '<p style="font-size:24px;font-weight:700;letter-spacing:6px">' . $code . '</p>'
-            . '<p>Kode ini berlaku selama ' . self::EXPIRES_MINUTES . ' menit.</p>'
-            . '<p>Jika Anda tidak merasa mendaftar di PoolStream, abaikan email ini.</p>'
-            . '<p>Salam, PoolStream</p>';
-
-        MailService::send((string) $user['email'], 'Kode OTP PoolStream', $body);
+        self::sendMail((string) $user['email'], (string) $user['name'], $code);
     }
 
     /**

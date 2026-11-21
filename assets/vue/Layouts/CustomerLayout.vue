@@ -1,12 +1,32 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { Link, usePage } from '@/shims/inertia.js';
+import { Link, useForm, usePage } from '@/shims/inertia.js';
 import Toast from '@/Components/Toast.vue';
 import Logo from '@/Components/Logo.vue';
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
 const userInitial = computed(() => (user.value?.name || '?').charAt(0).toUpperCase());
+const needsWhatsapp = computed(() => user.value?.role === 'customer' && !user.value?.whatsapp);
+
+const whatsappForm = useForm({
+    whatsapp: '',
+});
+
+const onWhatsappInput = () => {
+    whatsappForm.whatsapp = whatsappForm.whatsapp.replace(/\D/g, '').slice(0, 15);
+};
+
+const submitWhatsapp = () => {
+    whatsappForm.post(route('profile.whatsapp'), {
+        onSuccess: (res) => {
+            if (res?.user && page.props.auth) {
+                page.props.auth.user = res.user;
+            }
+            whatsappForm.reset();
+        },
+    });
+};
 
 defineProps({
     backHref: {
@@ -103,6 +123,64 @@ onMounted(() => {
         <main class="bb-customer-main">
             <slot />
         </main>
+
+        <div v-if="needsWhatsapp" class="bb-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title">
+            <div class="bb-modal" style="max-width: 420px; width: 92%;">
+                <div class="bb-modal-body p-4">
+                    <div class="text-center mb-3">
+                        <div class="d-inline-flex align-items-center justify-content-center rounded-circle mb-2" style="width: 56px; height: 56px; background: rgba(16, 185, 129, 0.14); color: #10b981;">
+                            <i class="bi bi-whatsapp fs-3"></i>
+                        </div>
+                        <h5 id="wa-modal-title" class="fw-bold mb-1 bb-text-primary">Lengkapi No. WhatsApp</h5>
+                        <p class="small text-secondary mb-0">
+                            Masukkan nomor WhatsApp aktif Anda (format 08...) untuk konfirmasi booking.
+                        </p>
+                    </div>
+
+                    <form @submit.prevent="submitWhatsapp">
+                        <div class="mb-3">
+                            <label for="modal-whatsapp" class="bb-label text-secondary">No. WhatsApp</label>
+                            <input
+                                id="modal-whatsapp"
+                                type="tel"
+                                inputmode="numeric"
+                                maxlength="15"
+                                pattern="08[0-9]{8,13}"
+                                title="Awali dengan 08 dan masukkan 10-15 digit angka"
+                                class="bb-input w-100 mt-1"
+                                :class="{ 'border-danger': whatsappForm.errors.whatsapp }"
+                                v-model="whatsappForm.whatsapp"
+                                @input="onWhatsappInput"
+                                required
+                                autofocus
+                                autocomplete="tel-national"
+                                placeholder="081234567890"
+                            />
+                            <div v-if="whatsappForm.errors.whatsapp" class="small text-danger mt-1">
+                                {{ whatsappForm.errors.whatsapp }}
+                            </div>
+                        </div>
+
+                        <button type="submit" :disabled="whatsappForm.processing" class="bb-btn bb-btn--success w-100 py-3">
+                            <span v-if="whatsappForm.processing" class="spinner-border spinner-border-sm me-2"></span>
+                            <i v-else class="bi bi-check2-circle me-1"></i>
+                            Simpan No. WhatsApp
+                        </button>
+                    </form>
+
+                    <div class="text-center mt-3">
+                        <Link
+                            :href="route('logout')"
+                            method="post"
+                            as="button"
+                            class="btn btn-link btn-sm text-secondary text-decoration-none"
+                        >
+                            Keluar dari akun ini
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <nav class="bb-customer-nav" aria-label="Navigasi customer">
             <div class="bb-customer-nav__inner">

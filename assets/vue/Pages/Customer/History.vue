@@ -2,7 +2,7 @@
 import CustomerLayout from '@/Layouts/CustomerLayout.vue';
 import ConfirmModal from '@/Components/ConfirmModal.vue';
 import { Head, Link, router } from '@/shims/inertia.js';
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps({
     bookings: {
@@ -76,17 +76,44 @@ const past = computed(() =>
     props.bookings.filter((booking) => !['booked', 'active'].includes(booking.status)),
 );
 
+const nowTick = ref(Date.now());
+let clockTimer = null;
+
+onMounted(() => {
+    clockTimer = setInterval(() => {
+        nowTick.value = Date.now();
+    }, 1000);
+});
+
+onUnmounted(() => {
+    if (clockTimer) clearInterval(clockTimer);
+});
+
+const isStartReached = (booking) =>
+    booking.status === 'booked' && new Date(booking.start_time).getTime() <= nowTick.value;
+
 const canCancel = (booking) =>
-    booking.status === 'booked' && new Date(booking.start_time) > new Date();
+    booking.status === 'booked' && new Date(booking.start_time).getTime() > nowTick.value;
+
+const openCancelConfirm = (booking) => {
+    if (!canCancel(booking)) return;
+    cancelTarget.value = booking;
+};
 
 const cancelTarget = ref(null);
 
 const executeCancel = () => {
-    if (!cancelTarget.value) return;
+    if (!cancelTarget.value || !canCancel(cancelTarget.value)) {
+        cancelTarget.value = null;
+        return;
+    }
 
     router.delete(route('customer.booking.cancel', cancelTarget.value.id), {
         preserveScroll: true,
         onSuccess: () => {
+            cancelTarget.value = null;
+        },
+        onError: () => {
             cancelTarget.value = null;
         },
     });
@@ -160,10 +187,17 @@ const executeCancel = () => {
                             v-if="canCancel(booking)"
                             type="button"
                             class="bb-h-cancel"
-                            @click="cancelTarget = booking"
+                            @click="openCancelConfirm(booking)"
                         >
                             <i class="bi bi-x-circle me-1"></i>Batalkan
                         </button>
+                        <span
+                            v-else-if="isStartReached(booking)"
+                            class="small text-warning fw-semibold"
+                            style="font-size: 0.72rem;"
+                        >
+                            <i class="bi bi-lock-fill me-1"></i>Waktu bermain sudah masuk
+                        </span>
                     </div>
                 </article>
             </div>

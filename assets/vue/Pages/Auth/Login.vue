@@ -116,7 +116,7 @@ onUnmounted(() => {
                 <div v-if="form.errors.username" class="small text-danger mt-1">{{ form.errors.username }}</div>
             </div>
 
-            <div class="mb-3">
+            <div class="mb-4">
                 <label for="password" class="bb-label text-secondary">Password</label>
                 <input
                     id="password"
@@ -129,12 +129,6 @@ onUnmounted(() => {
                     placeholder="••••••••"
                 />
                 <div v-if="form.errors.password" class="small text-danger mt-1">{{ form.errors.password }}</div>
-            </div>
-
-            <div class="d-flex justify-content-end align-items-center mb-4">
-                <Link :href="route('password.request')" class="small text-decoration-none" style="color: #10b981;">
-                    Lupa Password?
-                </Link>
             </div>
 
             <button type="submit" :disabled="form.processing" class="bb-btn bb-btn--success w-100 py-3 mb-3">

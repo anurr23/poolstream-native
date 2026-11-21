@@ -8,15 +8,13 @@ const routeMap = {
     'api.password.confirm': 'api/auth.php?action=confirm-password',
     register: 'register.php',
     logout: 'api/auth.php?action=logout',
-    'password.request': 'forgot-password.php',
-    'password.email': 'api/auth.php?action=forgot',
-    'password.reset': 'reset-password.php?token={0}',
-    'password.store': 'api/auth.php?action=reset',
     'password.confirm': 'confirm-password.php',
     'password.update': 'api/profile.php?action=password',
     'customer.verification.notice': 'verify-otp.php',
     'customer.verification.verify': 'api/auth.php?action=verify',
     'customer.verification.resend': 'api/auth.php?action=resend',
+    'customer.verification.restart': 'api/auth.php?action=restart-registration',
+    'customer.verification.cancel': 'api/auth.php?action=cancel-verification',
     'customer.home': 'customer-home.php',
     'customer.booking.index': 'customer-booking.php',
     'customer.history': 'customer-history.php',
@@ -33,6 +31,9 @@ const routeMap = {
     'tables.stop': 'api/tables.php?action=stop&id={0}',
     'tables.toggle-light': 'api/tables.php?action=toggle-light&id={0}',
     'tables.start-booking': 'api/tables.php?action=start-booking&id={0}',
+    'tables.cancel-booking': 'api/tables.php?action=cancel-booking&id={0}',
+    'transactions.send-receipt': 'api/tables.php?action=send-receipt&id={0}',
+    'transactions.send-receipt-wa': 'api/tables.php?action=send-receipt-wa&id={0}',
     'tables.updateSession': 'api/tables.php?action=update&id={0}&transaction={1}',
     'transaction-items.store': 'api/transaction-items.php?action=store&id={0}',
     'transaction-items.add': 'api/transaction-items.php?action=update&id={0}',
@@ -67,6 +68,7 @@ const routeMap = {
     'api.ai-evaluation.show': 'api/ai-evaluations.php?action=show',
     'profile.edit': 'profile.php',
     'profile.update': 'api/profile.php?action=update',
+    'profile.whatsapp': 'api/profile.php?action=whatsapp',
     'auth.google.redirect': 'google-auth.php?action=redirect',
     'auth.google.callback': 'google-auth.php?action=callback',
 };
@@ -78,8 +80,6 @@ const pageRouteMap = {
     'Admin/Index': 'admin.index',
     'Auth/Login': 'login',
     'Auth/Register': 'register',
-    'Auth/ForgotPassword': 'password.request',
-    'Auth/ResetPassword': 'password.store',
     'Auth/VerifyOtp': 'customer.verification.notice',
     'Auth/ConfirmPassword': 'password.confirm',
     'Customer/Home': 'customer.home',
@@ -246,7 +246,8 @@ async function request(method, url, data = {}, options = {}) {
         if (json?.errors) setErrors(json.errors);
         else setErrors({});
         if (json?.message) setFlash('success', json.message);
-        if (typeof options.onSuccess === 'function') options.onSuccess(json || {});
+        blockUi(false);
+        if (typeof options.onSuccess === 'function') await options.onSuccess(json || {});
 
         if (json?.redirect) {
             window.location.href = json.redirect;

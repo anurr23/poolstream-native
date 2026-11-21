@@ -39,12 +39,21 @@ class Transaction
         return $row ? shape_table($row) : null;
     }
 
-    private function userFor(?string $userId): ?array
+    public function userFor(?string $userId, ?string $customerName = null): ?array
     {
-        if (!$userId) {
-            return null;
+        $row = null;
+        if ($userId) {
+            $candidate = fetch_one('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => $userId]);
+            if ($candidate && ($candidate['role'] ?? '') === 'customer') {
+                $row = $candidate;
+            }
         }
-        $row = fetch_one('SELECT * FROM users WHERE id = :id LIMIT 1', [':id' => $userId]);
+        if (!$row && $customerName !== null && trim($customerName) !== '') {
+            $row = fetch_one(
+                "SELECT * FROM users WHERE role = 'customer' AND LOWER(name) = LOWER(:name) LIMIT 1",
+                [':name' => trim($customerName)]
+            );
+        }
         if (!$row) {
             return null;
         }
@@ -60,9 +69,52 @@ class Transaction
             $row,
             $this->tableFor($row['table_id'] ?? null),
             $this->packageFor(isset($row['package_id']) ? (int) $row['package_id'] : null),
-            $this->userFor($row['user_id'] ?? null),
+            $this->userFor($row['user_id'] ?? null, $row['customer_name'] ?? null),
             $items ? $this->items((int) $row['id']) : null
         );
+    }
+
+    public function ensureReceiptNumber(int $transactionId, ?string $dateRef = null): ?string
+    {
+        $row = fetch_one('SELECT id, receipt_no, created_at FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$row) {
+            return null;
+        }
+        if (!empty($row['receipt_no'])) {
+            return (string) $row['receipt_no'];
+        }
+
+        $ts = strtotime((string) ($dateRef ?: $row['created_at'] ?: 'now')) ?: time();
+        $prefix = 'PS-' . date('ym', $ts) . '-';
+        $ownTx = !$this->db->inTransaction();
+        if ($ownTx) {
+            $this->db->beginTransaction();
+        }
+
+        try {
+            $last = fetch_value(
+                "SELECT receipt_no FROM transactions
+                 WHERE receipt_no LIKE :prefix
+                 ORDER BY CAST(SUBSTRING_INDEX(receipt_no, '-', -1) AS UNSIGNED) DESC
+                 LIMIT 1 FOR UPDATE",
+                [':prefix' => $prefix . '%']
+            );
+            $nextSeq = $last ? ((int) substr((string) $last, strlen($prefix))) + 1 : 1;
+            $receiptNo = $prefix . str_pad((string) $nextSeq, 4, '0', STR_PAD_LEFT);
+            execute_sql(
+                'UPDATE transactions SET receipt_no = :receipt_no WHERE id = :id AND receipt_no IS NULL',
+                [':receipt_no' => $receiptNo, ':id' => $transactionId]
+            );
+            if ($ownTx) {
+                $this->db->commit();
+            }
+            return $receiptNo;
+        } catch (Throwable $e) {
+            if ($ownTx && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     public function find(int $id): ?array
@@ -87,7 +139,7 @@ class Transaction
              WHERE type = 'billiard' AND status = 'booked' AND expected_end_time >= NOW()
              ORDER BY start_time ASC"
         );
-        return array_map(fn (array $row): array => $this->shape($row, false), $rows);
+        return array_map(fn (array $row): array => $this->shape($row, true), $rows);
     }
 
     public function bookingsForUser(string $userId, int $limit = 100): array
@@ -125,7 +177,7 @@ class Transaction
         return array_values(array_filter(array_map(static fn (array $row): ?string => $row['table_id'], $rows)));
     }
 
-    public function startSession(string $tableId, ?string $userId, string $customerName, int $packageId, float $durationHours, array $items = []): array
+    public function startSession(string $tableId, ?string $userId, string $customerName, int $packageId, float $durationHours, array $items = [], ?string $startTime = null): array
     {
         $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $tableId]);
         if (!$table) {
@@ -137,23 +189,52 @@ class Transaction
             throw new RuntimeException('Paket tidak valid.');
         }
 
+        $nowTs = time();
         $start = now();
+        if ($startTime !== null && trim($startTime) !== '') {
+            $rawStart = trim($startTime);
+            if (preg_match('/^\d{2}:\d{2}$/', $rawStart)) {
+                $candidateTs = strtotime(date('Y-m-d') . ' ' . $rawStart . ':00');
+            } else {
+                $candidateTs = strtotime($rawStart);
+            }
+            if ($candidateTs === false) {
+                throw new RuntimeException('Format jam mulai tidak valid.');
+            }
+            if ($candidateTs < $nowTs - 60) {
+                throw new RuntimeException('Jam mulai tidak boleh di waktu yang sudah lewat.');
+            }
+            // Jika jam mulai dalam rentang <= 1 menit dari sekarang, mulai langsung detik ini
+            $start = $candidateTs <= $nowTs + 60 ? date('Y-m-d H:i:s', $nowTs) : date('Y-m-d H:i:s', $candidateTs);
+        }
+
+        $startTs = strtotime($start);
+        $isImmediate = $startTs <= $nowTs + 60;
         $minutes = (int) round($durationHours * 60);
         $end = date('Y-m-d H:i:s', strtotime($start . ' +' . $minutes . ' minutes'));
 
         $conflict = fetch_one(
-            "SELECT id FROM transactions
+            "SELECT id, customer_name, start_time, expected_end_time, status FROM transactions
              WHERE table_id = :table_id AND type = 'billiard' AND status IN ('active','booked')
                AND start_time < :end
                AND (expected_end_time IS NULL OR expected_end_time > :start)
+             ORDER BY start_time ASC
              LIMIT 1",
             [':table_id' => $tableId, ':start' => $start, ':end' => $end]
         );
 
-        if ($table['status'] === 'active' || $conflict) {
-            throw new RuntimeException('Meja sedang dipakai atau sudah memiliki booking pada waktu tersebut.');
+        if ($conflict) {
+            $cStart = date('H:i', strtotime((string) $conflict['start_time']));
+            $cEnd = !empty($conflict['expected_end_time']) ? date('H:i', strtotime((string) $conflict['expected_end_time'])) : '';
+            $range = $cEnd !== '' ? "{$cStart} - {$cEnd}" : $cStart;
+            throw new RuntimeException("Jadwal bentrok dengan pesanan {$conflict['customer_name']} ({$range}).");
         }
 
+        if ($isImmediate && $table['status'] === 'active') {
+            throw new RuntimeException('Meja sedang dipakai sesi aktif.');
+        }
+
+        $status = $isImmediate ? 'active' : 'booked';
         $billiardCost = (float) $package['price'] * $durationHours;
         $fnbCost = 0.0;
 
@@ -165,7 +246,7 @@ class Transaction
                      billiard_cost, fnb_cost, total_cost, status, created_at, updated_at)
                  VALUES
                     ('billiard', :table_id, :package_id, :user_id, :customer_name, :start_time, :expected_end_time,
-                     :billiard_cost, 0, :total_cost, 'active', NOW(), NOW())",
+                     :billiard_cost, 0, :total_cost, :status, NOW(), NOW())",
                 [
                     ':table_id' => $tableId,
                     ':package_id' => $packageId,
@@ -175,6 +256,7 @@ class Transaction
                     ':expected_end_time' => $end,
                     ':billiard_cost' => $billiardCost,
                     ':total_cost' => $billiardCost,
+                    ':status' => $status,
                 ]
             );
             $transactionId = (int) $this->db->lastInsertId();
@@ -184,7 +266,10 @@ class Transaction
                 'UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id',
                 [':id' => $transactionId, ':fnb_cost' => $fnbCost, ':total_cost' => $billiardCost + $fnbCost]
             );
-            execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tableId]);
+            if ($isImmediate) {
+                execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tableId]);
+                $this->ensureReceiptNumber($transactionId, $start);
+            }
             $this->db->commit();
         } catch (Throwable $e) {
             if ($this->db->inTransaction()) {
@@ -193,7 +278,9 @@ class Transaction
             throw $e;
         }
 
-        RelayService::setLight($table, true);
+        if ($isImmediate) {
+            RelayService::setLight($table, true);
+        }
         return $this->find($transactionId);
     }
 
@@ -230,20 +317,22 @@ class Transaction
         return $total;
     }
 
-    public function updateSession(string $tableId, int $transactionId, int $packageId, float $durationHours, array $items = []): array
-    {
+    public function updateSession(
+        string $tableId,
+        int $transactionId,
+        int $packageId,
+        float $durationHours,
+        array $items = [],
+        ?string $customerName = null,
+        ?string $customerUserId = null,
+        ?string $startTime = null
+    ): array {
         $tx = fetch_one(
-            "SELECT * FROM transactions WHERE id = :id AND table_id = :table_id AND status = 'active' LIMIT 1",
+            "SELECT * FROM transactions WHERE id = :id AND table_id = :table_id AND status IN ('active', 'booked') LIMIT 1",
             [':id' => $transactionId, ':table_id' => $tableId]
         );
         if (!$tx) {
-            throw new RuntimeException('Sesi transaksi tidak ditemukan atau sudah tidak aktif.');
-        }
-
-        $elapsedMinutes = (time() - strtotime((string) $tx['start_time'])) / 60;
-        $elapsedHours = $elapsedMinutes / 60;
-        if ($durationHours < $elapsedHours) {
-            throw new RuntimeException('Durasi pesanan tidak boleh kurang dari waktu yang sudah berjalan (' . number_format($elapsedHours, 1) . ' jam).');
+            throw new RuntimeException('Pesanan tidak ditemukan atau sudah selesai.');
         }
 
         $package = fetch_one('SELECT * FROM packages WHERE id = :id LIMIT 1', [':id' => $packageId]);
@@ -251,7 +340,63 @@ class Transaction
             throw new RuntimeException('Paket tidak valid.');
         }
 
-        $expectedEnd = date('Y-m-d H:i:s', strtotime((string) $tx['start_time'] . ' +' . (int) round($durationHours * 60) . ' minutes'));
+        $start = (string) $tx['start_time'];
+        if ($tx['status'] === 'active') {
+            $elapsedMinutes = (time() - strtotime($start)) / 60;
+            $elapsedHours = $elapsedMinutes / 60;
+            if ($durationHours < $elapsedHours) {
+                throw new RuntimeException('Durasi pesanan tidak boleh kurang dari waktu yang sudah berjalan (' . number_format($elapsedHours, 1) . ' jam).');
+            }
+        } elseif ($startTime !== null && trim($startTime) !== '') {
+            $rawStart = trim($startTime);
+            $candidateTs = preg_match('/^\d{2}:\d{2}$/', $rawStart)
+                ? strtotime(date('Y-m-d', strtotime($start)) . ' ' . $rawStart . ':00')
+                : strtotime($rawStart);
+            if ($candidateTs === false) {
+                throw new RuntimeException('Format waktu mulai tidak valid.');
+            }
+            if ($candidateTs < time() - 60 && $candidateTs !== strtotime($start)) {
+                throw new RuntimeException('Waktu mulai tidak boleh diubah ke waktu yang sudah lewat.');
+            }
+            $start = date('Y-m-d H:i:s', $candidateTs);
+        }
+
+        $expectedEnd = date('Y-m-d H:i:s', strtotime($start . ' +' . (int) round($durationHours * 60) . ' minutes'));
+
+        $conflict = fetch_one(
+            "SELECT id, customer_name, start_time, expected_end_time FROM transactions
+             WHERE table_id = :table_id AND type = 'billiard' AND status IN ('active','booked')
+               AND id <> :id
+               AND start_time < :end
+               AND (expected_end_time IS NULL OR expected_end_time > :start)
+             ORDER BY start_time ASC
+             LIMIT 1",
+            [':table_id' => $tableId, ':id' => $transactionId, ':start' => $start, ':end' => $expectedEnd]
+        );
+
+        if ($conflict) {
+            $cStart = date('H:i', strtotime((string) $conflict['start_time']));
+            $cEnd = !empty($conflict['expected_end_time']) ? date('H:i', strtotime((string) $conflict['expected_end_time'])) : '';
+            $range = $cEnd !== '' ? "{$cStart} - {$cEnd}" : $cStart;
+            throw new RuntimeException("Perubahan durasi/jadwal bentrok dengan pesanan {$conflict['customer_name']} ({$range}).");
+        }
+
+        $finalCustomerName = ($customerName !== null && trim($customerName) !== '')
+            ? trim($customerName)
+            : (string) $tx['customer_name'];
+
+        $finalUserId = $tx['user_id'];
+        if ($customerUserId !== null) {
+            if ($customerUserId === '') {
+                $finalUserId = $tx['user_id'];
+            } else {
+                $custRow = fetch_one("SELECT id FROM users WHERE id = :id AND role = 'customer' LIMIT 1", [':id' => $customerUserId]);
+                if ($custRow) {
+                    $finalUserId = (string) $custRow['id'];
+                }
+            }
+        }
+
         $billiardCost = (float) $package['price'] * $durationHours;
 
         $this->db->beginTransaction();
@@ -260,12 +405,16 @@ class Transaction
             $fnbCost = $this->insertItems($transactionId, $items);
             execute_sql(
                 "UPDATE transactions
-                 SET package_id = :package_id, expected_end_time = :expected_end_time,
+                 SET customer_name = :customer_name, user_id = :user_id,
+                     package_id = :package_id, start_time = :start_time, expected_end_time = :expected_end_time,
                      billiard_cost = :billiard_cost, fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW()
                  WHERE id = :id",
                 [
                     ':id' => $transactionId,
+                    ':customer_name' => $finalCustomerName,
+                    ':user_id' => $finalUserId,
                     ':package_id' => $packageId,
+                    ':start_time' => $start,
                     ':expected_end_time' => $expectedEnd,
                     ':billiard_cost' => $billiardCost,
                     ':fnb_cost' => $fnbCost,
@@ -294,6 +443,7 @@ class Transaction
                 "UPDATE transactions SET end_time = :end_time, status = 'completed', updated_at = NOW() WHERE id = :id",
                 [':id' => $tx['id'], ':end_time' => $end]
             );
+            $this->ensureReceiptNumber((int) $tx['id'], $end);
             $this->recalculate((int) $tx['id']);
             $tx = $this->find((int) $tx['id']);
         }
@@ -337,6 +487,7 @@ class Transaction
 
         execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tx['table_id']]);
         execute_sql("UPDATE transactions SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
+        $this->ensureReceiptNumber($transactionId, (string) ($tx['start_time'] ?? 'now'));
         RelayService::setLight($table, true);
 
         return $this->find($transactionId);
@@ -351,6 +502,7 @@ class Transaction
         );
 
         foreach ($expired as $tx) {
+            $this->ensureReceiptNumber((int) $tx['id'], (string) ($tx['expected_end_time'] ?? 'now'));
             execute_sql(
                 "UPDATE transactions SET end_time = :end_time, total_cost = billiard_cost + fnb_cost, status = 'completed', updated_at = NOW() WHERE id = :id",
                 [':end_time' => $tx['expected_end_time'], ':id' => $tx['id']]
@@ -366,6 +518,39 @@ class Transaction
             "UPDATE transactions SET status = 'cancelled', updated_at = NOW()
              WHERE type = 'billiard' AND status = 'booked' AND expected_end_time IS NOT NULL AND expected_end_time <= NOW()"
         );
+
+        // Auto-start booking yang sudah memasuki jam mulai (start_time <= NOW() < expected_end_time)
+        $dueBookings = fetch_all(
+            "SELECT t.*
+             FROM transactions t
+             WHERE t.type = 'billiard'
+               AND t.status = 'booked'
+               AND t.start_time <= NOW()
+               AND (t.expected_end_time IS NULL OR t.expected_end_time > NOW())
+             ORDER BY t.start_time ASC"
+        );
+
+        foreach ($dueBookings as $booking) {
+            if (empty($booking['table_id'])) {
+                continue;
+            }
+            $table = fetch_one('SELECT * FROM tables WHERE id = :id LIMIT 1', [':id' => $booking['table_id']]);
+            if (!$table || $table['status'] === 'active') {
+                continue;
+            }
+            $activeOther = fetch_one(
+                "SELECT id FROM transactions WHERE table_id = :table_id AND status = 'active' LIMIT 1",
+                [':table_id' => $booking['table_id']]
+            );
+            if ($activeOther) {
+                continue;
+            }
+
+            execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $booking['table_id']]);
+            execute_sql("UPDATE transactions SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $booking['id']]);
+            $this->ensureReceiptNumber((int) $booking['id'], (string) ($booking['start_time'] ?? 'now'));
+            RelayService::setLight($table, true);
+        }
 
         return count($expired);
     }
@@ -407,11 +592,22 @@ class Transaction
         if ($tx['status'] !== 'booked') {
             throw new RuntimeException('Booking ini tidak bisa dibatalkan.');
         }
-        if (strtotime((string) $tx['start_time']) < time()) {
-            throw new RuntimeException('Booking yang sudah dimulai tidak bisa dibatalkan.');
+        if (strtotime((string) $tx['start_time']) <= time()) {
+            throw new RuntimeException('Booking yang sudah memasuki waktu mulai tidak bisa dibatalkan.');
         }
 
         execute_sql("UPDATE transactions SET status = 'cancelled', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
+    }
+
+    public function cancelBookingByStaff(int $transactionId): array
+    {
+        $tx = fetch_one('SELECT * FROM transactions WHERE id = :id LIMIT 1', [':id' => $transactionId]);
+        if (!$tx || $tx['type'] !== 'billiard' || $tx['status'] !== 'booked') {
+            throw new RuntimeException('Booking tidak valid atau sudah diproses.');
+        }
+
+        execute_sql("UPDATE transactions SET status = 'cancelled', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
+        return $this->find($transactionId) ?? $tx;
     }
 
     public function createFnbOrder(?string $userId, string $customerName, array $items = []): array
@@ -438,6 +634,7 @@ class Transaction
             'UPDATE transactions SET fnb_cost = :fnb_cost, total_cost = :total_cost, updated_at = NOW() WHERE id = :id',
             [':id' => $transactionId, ':fnb_cost' => $fnbCost, ':total_cost' => $fnbCost]
         );
+        $this->ensureReceiptNumber($transactionId);
 
         return $this->find($transactionId);
     }
@@ -583,6 +780,7 @@ class Transaction
             "UPDATE transactions SET end_time = NOW(), status = 'completed', updated_at = NOW() WHERE id = :id",
             [':id' => $transactionId]
         );
+        $this->ensureReceiptNumber($transactionId);
         return $this->find($transactionId) ?? [];
     }
 

@@ -183,6 +183,10 @@ api_handle(function (): void {
         $name = trim((string) ($input['name'] ?? ($existing['name'] ?? '')));
         $username = trim((string) ($input['username'] ?? ($existing['username'] ?? '')));
         $email = strtolower(trim((string) ($input['email'] ?? ($existing['email'] ?? ''))));
+        $hasWhatsappInput = array_key_exists('whatsapp', $input);
+        $whatsapp = $hasWhatsappInput
+            ? normalize_whatsapp($input['whatsapp'])
+            : (string) ($existing['whatsapp'] ?? '');
         $role = (string) ($input['role'] ?? ($existing['role'] ?? 'kasir'));
         $password = (string) ($input['password'] ?? '');
         $isActive = array_key_exists('is_active', $input) ? request_bool($input['is_active']) : (bool) ($existing['is_active'] ?? true);
@@ -196,6 +200,9 @@ api_handle(function (): void {
         }
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors['email'] = 'Email tidak valid.';
+        }
+        if ($whatsapp !== '' && ($waError = validate_whatsapp($whatsapp))) {
+            $errors['whatsapp'] = $waError;
         }
         if (!in_array($role, ['admin', 'kasir', 'customer'], true)) {
             $errors['role'] = 'Role tidak valid.';
@@ -212,6 +219,9 @@ api_handle(function (): void {
             }
             if ($email !== '' && fetch_one('SELECT id FROM users WHERE email = :email AND id <> :id LIMIT 1', [':email' => $email, ':id' => $id])) {
                 $errors['email'] = 'Email sudah digunakan.';
+            }
+            if ($whatsapp !== '' && (new User())->findByWhatsapp($whatsapp, $id)) {
+                $errors['whatsapp'] = 'Nomor WhatsApp sudah digunakan.';
             }
         }
         if ($action === 'update' && !$isActive && $id === $user['id']) {
@@ -237,6 +247,7 @@ api_handle(function (): void {
                 'name' => $name,
                 'username' => $username,
                 'email' => $email !== '' ? $email : null,
+                'whatsapp' => $whatsapp !== '' ? $whatsapp : null,
                 'role' => $role,
                 'is_active' => $isActive,
                 'password' => $password,
@@ -253,6 +264,9 @@ api_handle(function (): void {
                 'is_active' => $isActive,
                 'password' => $password,
             ];
+            if ($hasWhatsappInput) {
+                $data['whatsapp'] = $whatsapp !== '' ? $whatsapp : null;
+            }
             if ($email !== '' && $email !== ($existing['email'] ?? null)) {
                 $data['email_verified_at'] = now();
             }

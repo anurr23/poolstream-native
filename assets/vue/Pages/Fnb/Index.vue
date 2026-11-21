@@ -1,7 +1,7 @@
 <script setup>
 import KasirLayout from '@/Layouts/KasirLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@/shims/inertia.js';
-import { printReceipt } from '@/utils/receipt';
+import { printReceipt, getReceiptContact, buildReceiptFormData } from '@/utils/receipt';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 
 const props = defineProps({
@@ -255,18 +255,60 @@ const removeItemFromFnbOrder = (itemId) => {
     });
 };
 
+const showFnbSendReceiptMenu = ref(false);
+const sendingFnbReceiptEmail = ref(false);
+
+const fnbOrderContact = computed(() => {
+    return getReceiptContact(selectedFnbOrder.value);
+});
+
+const hasAnyFnbContact = computed(() => {
+    return !!(fnbOrderContact.value.whatsapp || fnbOrderContact.value.email);
+});
+
+const handleSendFnbReceiptWa = async () => {
+    if (!selectedFnbOrder.value || !fnbOrderContact.value.whatsapp || sendingFnbReceiptEmail.value) return;
+    showFnbSendReceiptMenu.value = false;
+    sendingFnbReceiptEmail.value = true;
+    try {
+        const formData = await buildReceiptFormData(selectedFnbOrder.value);
+        await router.post(route('transactions.send-receipt-wa', selectedFnbOrder.value.id), formData, {
+            preserveScroll: true,
+            preserveState: true,
+        });
+    } catch (e) {
+        console.error(e);
+    } finally {
+        sendingFnbReceiptEmail.value = false;
+    }
+};
+
+const handleSendFnbReceiptEmail = () => {
+    if (!selectedFnbOrder.value || !fnbOrderContact.value.email || sendingFnbReceiptEmail.value) return;
+    showFnbSendReceiptMenu.value = false;
+    sendingFnbReceiptEmail.value = true;
+    router.post(route('transactions.send-receipt', selectedFnbOrder.value.id), {}, {
+        preserveScroll: true,
+        preserveState: true,
+        onFinish: () => {
+            sendingFnbReceiptEmail.value = false;
+        },
+    });
+};
+
 const checkoutFnbOrder = () => {
     if (!selectedFnbOrder.value) return;
     const order = selectedFnbOrder.value;
     router.post(route('fnb-orders.checkout', order.id), {}, {
-        onSuccess: () => {
-            printReceipt({
-                ...order,
+        onSuccess: async (res) => {
+            closeFnbDetailModal();
+            const finalOrder = res?.transaction || order;
+            await printReceipt({
+                ...finalOrder,
                 type: 'fnb_only',
-                end_time: new Date().toISOString(),
+                end_time: finalOrder.end_time || new Date().toISOString(),
                 status: 'completed',
             });
-            closeFnbDetailModal();
         }
     });
 };
@@ -576,6 +618,69 @@ const checkoutFnbOrder = () => {
                         <button type="button" @click="printReceipt(selectedFnbOrder)" class="bb-btn bb-btn--sm bb-btn--ghost text-warning" title="Cetak Struk" style="border: 1px solid rgba(245,158,11,0.3);">
                             <i class="bi bi-printer fs-5"></i>
                         </button>
+
+                        <!-- Dropdown Kirim Struk (WA / Email) -->
+                        <div class="position-relative">
+                            <button
+                                type="button"
+                                class="bb-btn bb-btn--sm bb-btn--ghost d-inline-flex align-items-center gap-1"
+                                :class="hasAnyFnbContact ? 'text-info' : 'text-secondary'"
+                                :disabled="!hasAnyFnbContact || sendingFnbReceiptEmail"
+                                :title="hasAnyFnbContact ? 'Kirim Struk (WA / Email)' : 'Kontak WA & Email customer belum tersedia'"
+                                style="border: 1px solid rgba(6, 182, 212, 0.3); text-transform: none;"
+                                @click.stop="showFnbSendReceiptMenu = !showFnbSendReceiptMenu"
+                            >
+                                <span v-if="sendingFnbReceiptEmail" class="spinner-border spinner-border-sm"></span>
+                                <i v-else class="bi bi-send fs-6"></i>
+                                <i class="bi bi-chevron-down" style="font-size: 0.65rem;"></i>
+                            </button>
+
+                            <div
+                                v-if="showFnbSendReceiptMenu"
+                                class="position-absolute end-0 mt-1 rounded-3 shadow-lg border p-1"
+                                style="z-index: 40; min-width: 220px; background: var(--bs-body-bg); border-color: rgba(148, 163, 184, 0.22) !important;"
+                                @click.stop
+                            >
+                                <div class="px-2 py-1 small text-secondary fw-semibold border-bottom mb-1" style="font-size: 0.7rem; border-color: rgba(148, 163, 184, 0.12) !important;">
+                                    Kirim Struk Ke Customer
+                                </div>
+                                <button
+                                    type="button"
+                                    class="w-100 text-start px-2 py-2 rounded-2 border-0 bg-transparent d-flex align-items-center justify-content-between small"
+                                    :disabled="!fnbOrderContact.whatsapp"
+                                    :style="fnbOrderContact.whatsapp
+                                        ? 'color: var(--bs-body-color); cursor: pointer;'
+                                        : 'color: var(--bs-secondary-color); opacity: 0.45; cursor: not-allowed;'"
+                                    @click="handleSendFnbReceiptWa"
+                                >
+                                    <span class="d-flex align-items-center gap-2">
+                                        <i class="bi bi-whatsapp text-success"></i>
+                                        <span>WhatsApp</span>
+                                    </span>
+                                    <span class="text-secondary" style="font-size: 0.68rem;">
+                                        {{ fnbOrderContact.whatsapp || 'Tidak tersedia' }}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="w-100 text-start px-2 py-2 rounded-2 border-0 bg-transparent d-flex align-items-center justify-content-between small"
+                                    :disabled="!fnbOrderContact.email || sendingFnbReceiptEmail"
+                                    :style="fnbOrderContact.email
+                                        ? 'color: var(--bs-body-color); cursor: pointer;'
+                                        : 'color: var(--bs-secondary-color); opacity: 0.45; cursor: not-allowed;'"
+                                    @click="handleSendFnbReceiptEmail"
+                                >
+                                    <span class="d-flex align-items-center gap-2">
+                                        <i class="bi bi-envelope-fill text-info"></i>
+                                        <span>Email</span>
+                                    </span>
+                                    <span class="text-secondary text-truncate ms-2" style="font-size: 0.68rem; max-width: 110px;">
+                                        {{ fnbOrderContact.email || 'Tidak tersedia' }}
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
                         <button @click="closeFnbDetailModal" class="bb-theme-toggle" style="width: 32px; height: 32px; font-size: 0.9rem;">
                             <i class="bi bi-x-lg"></i>
                         </button>

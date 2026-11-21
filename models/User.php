@@ -26,6 +26,17 @@ class User
         return fetch_one('SELECT * FROM users WHERE email = :email LIMIT 1', [':email' => strtolower($email)]);
     }
 
+    public function findByWhatsapp(string $whatsapp, ?string $excludeId = null): ?array
+    {
+        if ($excludeId !== null && $excludeId !== '') {
+            return fetch_one(
+                'SELECT * FROM users WHERE whatsapp = :whatsapp AND id <> :id LIMIT 1',
+                [':whatsapp' => $whatsapp, ':id' => $excludeId]
+            );
+        }
+        return fetch_one('SELECT * FROM users WHERE whatsapp = :whatsapp LIMIT 1', [':whatsapp' => $whatsapp]);
+    }
+
     public function findByGoogleId(string $googleId): ?array
     {
         return fetch_one('SELECT * FROM users WHERE google_id = :google_id LIMIT 1', [':google_id' => $googleId]);
@@ -41,6 +52,16 @@ class User
         }, fetch_all('SELECT * FROM users ORDER BY name ASC'));
     }
 
+    public function customers(): array
+    {
+        return fetch_all(
+            "SELECT id, name, username, email, whatsapp
+             FROM users
+             WHERE role = 'customer' AND is_active = 1
+             ORDER BY name ASC"
+        );
+    }
+
     public function create(array $data): array
     {
         $id = $data['id'] ?? uuid_v4();
@@ -54,17 +75,18 @@ class User
             : ($email ? now() : null);
 
         execute_sql(
-            'INSERT INTO users (id, name, username, email, email_verified_at, role, is_active, password, photo_path, google_id, created_at, updated_at)
-             VALUES (:id, :name, :username, :email, :email_verified_at, :role, :is_active, :password, :photo_path, :google_id, NOW(), NOW())',
+            'INSERT INTO users (id, name, username, email, whatsapp, email_verified_at, role, is_active, password, photo_path, google_id, created_at, updated_at)
+             VALUES (:id, :name, :username, :email, :whatsapp, :email_verified_at, :role, :is_active, :password, :photo_path, :google_id, NOW(), NOW())',
             [
                 ':id' => $id,
                 ':name' => $data['name'],
                 ':username' => $username,
                 ':email' => $email,
+                ':whatsapp' => !empty($data['whatsapp']) ? (string) $data['whatsapp'] : null,
                 ':email_verified_at' => $emailVerified,
                 ':role' => $role,
                 ':is_active' => $isActive ? 1 : 0,
-                ':password' => password_hash($password, PASSWORD_BCRYPT),
+                ':password' => !empty($data['password_hash']) ? (string) $data['password_hash'] : password_hash($password, PASSWORD_BCRYPT),
                 ':photo_path' => $data['photo_path'] ?? null,
                 ':google_id' => $data['google_id'] ?? null,
             ]
@@ -82,7 +104,7 @@ class User
 
         $fields = [];
         $params = [':id' => $id];
-        foreach (['name', 'username', 'email', 'role', 'photo_path', 'google_id'] as $field) {
+        foreach (['name', 'username', 'email', 'whatsapp', 'role', 'photo_path', 'google_id'] as $field) {
             if (array_key_exists($field, $data)) {
                 $fields[] = "{$field} = :{$field}";
                 $params[':' . $field] = $data[$field] !== '' ? $data[$field] : null;

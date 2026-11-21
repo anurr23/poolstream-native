@@ -62,6 +62,22 @@ function mask_name(?string $name): string
     return $parts[0] . ' ' . strtoupper(substr((string) end($parts), 0, 1)) . '.';
 }
 
+function normalize_whatsapp(mixed $value): string
+{
+    return preg_replace('/\D/', '', trim((string) $value)) ?? '';
+}
+
+function validate_whatsapp(string $whatsapp): ?string
+{
+    if ($whatsapp === '') {
+        return 'Nomor WhatsApp wajib diisi.';
+    }
+    if (!preg_match('/^08\d{8,13}$/', $whatsapp)) {
+        return 'Nomor WhatsApp harus diawali 08 dan terdiri dari 10-15 digit angka.';
+    }
+    return null;
+}
+
 function normalize_money(mixed $value): float
 {
     if (is_int($value) || is_float($value)) {
@@ -340,6 +356,7 @@ function shape_transaction(array $row, ?array $table = null, ?array $package = n
 {
     $data = [
         'id' => (int) $row['id'],
+        'receipt_no' => $row['receipt_no'] ?? null,
         'type' => $row['type'] ?? 'billiard',
         'table_id' => $row['table_id'],
         'package_id' => $row['package_id'] !== null ? (int) $row['package_id'] : null,

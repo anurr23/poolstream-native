@@ -12,10 +12,12 @@ $tables = (new Table())->allWithActiveAndRecentTransactions();
 $packages = (new Package())->all();
 $fnbItems = (new FnbItem())->all();
 $upcomingBookings = $txModel->upcomingBookings();
+$customers = (new User())->customers();
 
 render_page('Dashboard', [
     'tables' => $tables,
     'packages' => $packages,
     'fnbItems' => $fnbItems,
     'upcomingBookings' => $upcomingBookings,
+    'customers' => $customers,
 ], 'Dashboard');

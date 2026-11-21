@@ -4,12 +4,24 @@ import GuestLayout from '@/Layouts/GuestLayout.vue';
 import GoogleIcon from '@/Components/GoogleIcon.vue';
 import { Head, Link, router, useForm } from '@/shims/inertia.js';
 
+const props = defineProps({
+    draft: {
+        type: Object,
+        default: null,
+    },
+});
+
 const form = useForm({
-    name: '',
-    email: '',
+    name: props.draft?.name || '',
+    email: props.draft?.email || '',
+    whatsapp: props.draft?.whatsapp || '',
     password: '',
     password_confirmation: '',
 });
+
+const onWhatsappInput = () => {
+    form.whatsapp = form.whatsapp.replace(/\D/g, '').slice(0, 15);
+};
 
 const submit = () => {
     form.post(route('api.register'), {
@@ -142,6 +154,26 @@ onUnmounted(() => {
                     placeholder="nama@email.com"
                 />
                 <div v-if="form.errors.email" class="small text-danger mt-1">{{ form.errors.email }}</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="whatsapp" class="bb-label text-secondary">No. WhatsApp</label>
+                <input
+                    id="whatsapp"
+                    type="tel"
+                    inputmode="numeric"
+                    maxlength="15"
+                    pattern="08[0-9]{8,13}"
+                    title="Awali dengan 08 dan masukkan 10-15 digit angka"
+                    class="bb-input w-100 mt-1"
+                    :class="{ 'border-danger': form.errors.whatsapp }"
+                    v-model="form.whatsapp"
+                    @input="onWhatsappInput"
+                    required
+                    autocomplete="tel-national"
+                    placeholder="081234567890"
+                />
+                <div v-if="form.errors.whatsapp" class="small text-danger mt-1">{{ form.errors.whatsapp }}</div>
             </div>
 
             <div class="mb-3">

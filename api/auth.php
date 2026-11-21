@@ -67,6 +67,7 @@ api_handle(function (): void {
 
             $name = trim((string) ($input['name'] ?? ''));
             $email = strtolower(trim((string) ($input['email'] ?? '')));
+            $whatsapp = normalize_whatsapp($input['whatsapp'] ?? '');
             $password = (string) ($input['password'] ?? '');
             $confirmation = (string) ($input['password_confirmation'] ?? '');
 
@@ -76,6 +77,9 @@ api_handle(function (): void {
             }
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $errors['email'] = 'Email tidak valid.';
+            }
+            if ($waError = validate_whatsapp($whatsapp)) {
+                $errors['whatsapp'] = $waError;
             }
             if (strlen($password) < 8) {
                 $errors['password'] = 'Password minimal 8 karakter.';
@@ -88,32 +92,38 @@ api_handle(function (): void {
             }
 
             $userModel = new User();
+            $duplicateErrors = [];
             if ($userModel->findByEmail($email)) {
-                json_error(['email' => 'Email sudah terdaftar.']);
+                $duplicateErrors['email'] = 'Email sudah terdaftar.';
+            }
+            if ($userModel->findByWhatsapp($whatsapp)) {
+                $duplicateErrors['whatsapp'] = 'Nomor WhatsApp sudah terdaftar.';
+            }
+            if ($duplicateErrors) {
+                json_error($duplicateErrors);
             }
 
-            $user = $userModel->create([
+            $code = OtpService::generateCode();
+            $now = time();
+            $_SESSION['pending_registration'] = [
                 'name' => $name,
                 'email' => $email,
-                'username' => $userModel->makeUsernameFromEmail($email),
-                'password' => $password,
-                'role' => 'customer',
-                'is_active' => true,
-                'email_verified_at' => null,
-            ]);
-
-            session_regenerate_id(true);
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user_role'] = $user['role'];
-            $_SESSION['name'] = $user['name'];
-            $_SESSION['username'] = $user['username'];
+                'whatsapp' => $whatsapp,
+                'password_hash' => password_hash($password, PASSWORD_BCRYPT),
+                'otp_hash' => password_hash($code, PASSWORD_BCRYPT),
+                'otp_expires_at' => $now + (OtpService::EXPIRES_MINUTES * 60),
+                'otp_attempts' => 0,
+                'resend_available_at' => $now + 60,
+            ];
+            unset($_SESSION['_register_draft']);
 
             try {
-                (new OtpService())->send($user);
-                flash('success', 'Akun berhasil dibuat. Cek email untuk kode OTP.');
+                OtpService::sendMail($email, $name, $code);
+                flash('success', 'Kode OTP telah dikirim ke email Anda.');
             } catch (Throwable $e) {
                 error_log('[OTP] ' . $e->getMessage());
-                flash('error', 'Akun dibuat, tetapi email OTP gagal dikirim. Silakan kirim ulang kode.');
+                $_SESSION['pending_registration']['resend_available_at'] = $now;
+                flash('error', 'Kode OTP belum dapat dikirim saat ini. Silakan kirim ulang beberapa saat lagi.');
             }
 
             json_ok([], null, 'verify-otp.php');
@@ -122,120 +132,180 @@ api_handle(function (): void {
         case 'verify':
             require_method('POST');
             verify_csrf();
-            require_login();
-            $user = current_user();
-            if (!$user || $user['role'] !== 'customer') {
-                json_error('Akses ditolak.', 403);
-            }
-            if (!empty($user['email_verified_at'])) {
-                json_ok([], null, 'customer-home.php');
-            }
 
             $code = preg_replace('/\D/', '', (string) ($input['code'] ?? '')) ?? '';
             if (strlen($code) !== 6) {
                 json_error(['code' => 'Kode OTP harus 6 digit.']);
             }
 
-            $status = (new OtpService())->verify($user, $code);
-            if ($status === 'verified') {
-                flash('success', 'Email berhasil diverifikasi. Selamat datang!');
-                json_ok([], null, 'customer-home.php');
+            $user = current_user();
+            if ($user) {
+                if ($user['role'] !== 'customer') {
+                    json_error('Akses ditolak.', 403);
+                }
+                if (!empty($user['email_verified_at'])) {
+                    json_ok([], null, 'customer-home.php');
+                }
+
+                $status = (new OtpService())->verify($user, $code);
+                if ($status === 'verified') {
+                    flash('success', 'Email berhasil diverifikasi. Selamat datang!');
+                    json_ok([], null, 'customer-home.php');
+                }
+
+                $message = match ($status) {
+                    'expired' => 'Kode OTP sudah kedaluwarsa. Silakan kirim ulang kode baru.',
+                    'locked' => 'Terlalu banyak percobaan salah. Silakan kirim ulang kode baru.',
+                    default => 'Kode OTP tidak valid.',
+                };
+                json_error(['code' => $message]);
             }
 
-            $message = match ($status) {
-                'expired' => 'Kode OTP sudah kedaluwarsa. Kirim ulang kode baru.',
-                'locked' => 'Terlalu banyak percobaan. Kirim ulang kode baru.',
-                default => 'Kode OTP tidak valid.',
-            };
-            json_error(['code' => $message]);
+            $pending = $_SESSION['pending_registration'] ?? null;
+            if (!is_array($pending) || empty($pending['email'])) {
+                json_error(['code' => 'Sesi pendaftaran tidak ditemukan atau sudah berakhir. Silakan daftar ulang.']);
+            }
+
+            if (time() > (int) ($pending['otp_expires_at'] ?? 0)) {
+                json_error(['code' => 'Kode OTP sudah kedaluwarsa. Silakan kirim ulang kode baru.']);
+            }
+
+            if ((int) ($pending['otp_attempts'] ?? 0) >= OtpService::MAX_ATTEMPTS) {
+                json_error(['code' => 'Terlalu banyak percobaan salah. Silakan kirim ulang kode baru.']);
+            }
+
+            if (!password_verify($code, (string) ($pending['otp_hash'] ?? ''))) {
+                $_SESSION['pending_registration']['otp_attempts'] = (int) ($pending['otp_attempts'] ?? 0) + 1;
+                json_error(['code' => 'Kode OTP tidak valid.']);
+            }
+
+            $userModel = new User();
+            if ($userModel->findByEmail((string) $pending['email'])) {
+                unset($_SESSION['pending_registration']);
+                json_error(['code' => 'Email sudah terdaftar. Silakan masuk atau daftar dengan email lain.']);
+            }
+            if (!empty($pending['whatsapp']) && $userModel->findByWhatsapp((string) $pending['whatsapp'])) {
+                unset($_SESSION['pending_registration']);
+                json_error(['code' => 'Nomor WhatsApp sudah terdaftar. Silakan daftar dengan nomor lain.']);
+            }
+
+            $created = $userModel->create([
+                'name' => (string) $pending['name'],
+                'email' => (string) $pending['email'],
+                'whatsapp' => (string) ($pending['whatsapp'] ?? ''),
+                'username' => $userModel->makeUsernameFromEmail((string) $pending['email']),
+                'password_hash' => (string) $pending['password_hash'],
+                'role' => 'customer',
+                'is_active' => true,
+                'email_verified_at' => now(),
+            ]);
+
+            unset($_SESSION['pending_registration'], $_SESSION['_register_draft']);
+            session_regenerate_id(true);
+            $_SESSION['user_id'] = $created['id'];
+            $_SESSION['user_role'] = $created['role'];
+            $_SESSION['name'] = $created['name'];
+            $_SESSION['username'] = $created['username'];
+
+            flash('success', 'Email berhasil diverifikasi. Selamat datang!');
+            json_ok([], null, 'customer-home.php');
             break;
 
         case 'resend':
             require_method('POST');
             verify_csrf();
-            require_login();
+
             $user = current_user();
-            if (!$user || $user['role'] !== 'customer') {
-                json_error('Akses ditolak.', 403);
+            if ($user) {
+                if ($user['role'] !== 'customer') {
+                    json_error('Akses ditolak.', 403);
+                }
+                if (!empty($user['email_verified_at'])) {
+                    json_ok([], null, 'customer-home.php');
+                }
+                $remaining = 60 - (time() - (int) ($_SESSION['otp_resend_at'] ?? 0));
+                if ($remaining > 0) {
+                    json_error(['code' => "Tunggu {$remaining} detik sebelum mengirim ulang kode."]);
+                }
+                $_SESSION['otp_resend_at'] = time();
+                try {
+                    (new OtpService())->send($user);
+                } catch (Throwable $e) {
+                    error_log('[OTP] ' . $e->getMessage());
+                    unset($_SESSION['otp_resend_at']);
+                    json_error(['code' => 'Gagal mengirim kode OTP. Silakan coba lagi nanti.']);
+                }
+                json_ok(['cooldown' => 60], 'Kode OTP baru sudah dikirim ke email Anda.');
             }
-            if (!empty($user['email_verified_at'])) {
-                json_ok([], null, 'customer-home.php');
+
+            $pending = $_SESSION['pending_registration'] ?? null;
+            if (!is_array($pending) || empty($pending['email'])) {
+                json_error(['code' => 'Sesi pendaftaran tidak ditemukan atau sudah berakhir. Silakan daftar ulang.']);
             }
-            if (time() - (int) ($_SESSION['otp_resend_at'] ?? 0) < 60) {
-                json_error(['code' => 'Tunggu 60 detik sebelum mengirim ulang kode.']);
+
+            $now = time();
+            $remaining = (int) ($pending['resend_available_at'] ?? 0) - $now;
+            if ($remaining > 0) {
+                json_error(['code' => "Tunggu {$remaining} detik sebelum mengirim ulang kode."]);
             }
-            $_SESSION['otp_resend_at'] = time();
+
+            $code = OtpService::generateCode();
+            $_SESSION['pending_registration']['otp_hash'] = password_hash($code, PASSWORD_BCRYPT);
+            $_SESSION['pending_registration']['otp_expires_at'] = $now + (OtpService::EXPIRES_MINUTES * 60);
+            $_SESSION['pending_registration']['otp_attempts'] = 0;
+            $_SESSION['pending_registration']['resend_available_at'] = $now + 60;
+
             try {
-                (new OtpService())->send($user);
+                OtpService::sendMail((string) $pending['email'], (string) $pending['name'], $code);
             } catch (Throwable $e) {
-                unset($_SESSION['otp_resend_at']);
-                json_error(['code' => 'Gagal mengirim email OTP. Coba lagi nanti.']);
+                error_log('[OTP] ' . $e->getMessage());
+                $_SESSION['pending_registration']['resend_available_at'] = $now;
+                json_error(['code' => 'Gagal mengirim kode OTP. Silakan coba lagi nanti.']);
             }
-            flash('success', 'Kode OTP baru sudah dikirim ke email Anda.');
-            json_ok([], null, 'verify-otp.php');
+
+            json_ok(['cooldown' => 60], 'Kode OTP baru sudah dikirim ke email Anda.');
             break;
 
-        case 'forgot':
+        case 'restart-registration':
             require_method('POST');
             verify_csrf();
-            $username = trim((string) ($input['username'] ?? ''));
-            if ($username === '') {
-                json_error(['username' => 'Username wajib diisi.']);
+
+            $user = current_user();
+            if ($user && $user['role'] === 'customer' && empty($user['email_verified_at'])) {
+                $_SESSION['_register_draft'] = [
+                    'name' => (string) ($user['name'] ?? ''),
+                    'email' => (string) ($user['email'] ?? ''),
+                    'whatsapp' => (string) ($user['whatsapp'] ?? ''),
+                ];
+                (new User())->delete((string) $user['id']);
+                unset($_SESSION['user_id'], $_SESSION['user_role'], $_SESSION['name'], $_SESSION['username'], $_SESSION['otp_resend_at']);
+                session_regenerate_id(true);
+            } elseif (!empty($_SESSION['pending_registration']) && is_array($_SESSION['pending_registration'])) {
+                $pending = $_SESSION['pending_registration'];
+                $_SESSION['_register_draft'] = [
+                    'name' => (string) ($pending['name'] ?? ''),
+                    'email' => (string) ($pending['email'] ?? ''),
+                    'whatsapp' => (string) ($pending['whatsapp'] ?? ''),
+                ];
+                unset($_SESSION['pending_registration']);
             }
 
-            $user = fetch_one('SELECT * FROM users WHERE username = :username LIMIT 1', [':username' => $username]);
-            $statusMessage = 'Jika username terdaftar, instruksi reset password telah dibuat.';
-            if ($user && !empty($user['email'])) {
-                $token = bin2hex(random_bytes(32));
-                execute_sql(
-                    'INSERT INTO password_reset_tokens (email, token, created_at) VALUES (:email, :token, NOW())
-                     ON DUPLICATE KEY UPDATE token = VALUES(token), created_at = VALUES(created_at)',
-                    [':email' => $username, ':token' => password_hash($token, PASSWORD_BCRYPT)]
-                );
-                $link = (isset($_SERVER['HTTP_HOST']) ? ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] : '') . url('reset-password.php?token=' . urlencode($token) . '&username=' . urlencode($username));
-                $body = '<p>Halo ' . htmlspecialchars((string) $user['name'], ENT_QUOTES, 'UTF-8') . ',</p>'
-                    . '<p>Kami menerima permintaan reset password untuk akun PoolStream Anda.</p>'
-                    . '<p><a href="' . htmlspecialchars($link, ENT_QUOTES, 'UTF-8') . '">Klik di sini untuk membuat password baru</a></p>'
-                    . '<p>Link berlaku 60 menit. Jika Anda tidak meminta reset, abaikan email ini.</p>';
-                MailService::send((string) $user['email'], 'Reset Password PoolStream', $body);
-            }
-
-            flash('success', $statusMessage);
-            json_ok([], null, 'forgot-password.php');
+            json_ok([], null, 'register.php');
             break;
 
-        case 'reset':
+        case 'cancel-verification':
             require_method('POST');
             verify_csrf();
-            $token = (string) ($input['token'] ?? '');
-            $username = trim((string) ($input['username'] ?? ''));
-            $password = (string) ($input['password'] ?? '');
-            $confirmation = (string) ($input['password_confirmation'] ?? '');
 
-            if (strlen($password) < 8) {
-                json_error(['password' => 'Password minimal 8 karakter.']);
+            $user = current_user();
+            if ($user && $user['role'] === 'customer' && empty($user['email_verified_at'])) {
+                (new User())->delete((string) $user['id']);
+                unset($_SESSION['user_id'], $_SESSION['user_role'], $_SESSION['name'], $_SESSION['username'], $_SESSION['otp_resend_at']);
+                session_regenerate_id(true);
             }
-            if ($password !== $confirmation) {
-                json_error(['password' => 'Konfirmasi password tidak cocok.']);
-            }
+            unset($_SESSION['pending_registration'], $_SESSION['_register_draft']);
 
-            $row = fetch_one('SELECT * FROM password_reset_tokens WHERE email = :username LIMIT 1', [':username' => $username]);
-            if (!$row || !password_verify($token, (string) $row['token']) || strtotime((string) $row['created_at']) < time() - 3600) {
-                json_error(['username' => 'Token reset password tidak valid atau sudah kedaluwarsa.']);
-            }
-
-            $user = fetch_one('SELECT * FROM users WHERE username = :username LIMIT 1', [':username' => $username]);
-            if (!$user) {
-                json_error(['username' => 'Akun tidak ditemukan.']);
-            }
-
-            execute_sql('UPDATE users SET password = :password, remember_token = :remember_token, updated_at = NOW() WHERE id = :id', [
-                ':id' => $user['id'],
-                ':password' => password_hash($password, PASSWORD_BCRYPT),
-                ':remember_token' => bin2hex(random_bytes(30)),
-            ]);
-            execute_sql('DELETE FROM password_reset_tokens WHERE email = :username', [':username' => $username]);
-            flash('success', 'Password berhasil direset. Silakan login.');
+            flash('success', 'Pendaftaran akun dibatalkan.');
             json_ok([], null, 'login.php');
             break;
 

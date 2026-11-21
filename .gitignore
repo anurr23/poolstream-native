@@ -1,6 +1,7 @@
 config/credentials.php
+storage/receipts/
 config/database.local.php
-_legacy/
+.agents
 *.log
 .DS_Store
 .env.backup

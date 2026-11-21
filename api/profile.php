@@ -37,6 +37,24 @@ api_handle(function (): void {
         json_ok([], null, 'profile.php');
     }
 
+    if ($action === 'whatsapp') {
+        require_method('POST');
+        verify_csrf();
+        $whatsapp = normalize_whatsapp($input['whatsapp'] ?? '');
+        if ($waError = validate_whatsapp($whatsapp)) {
+            json_error(['whatsapp' => $waError]);
+        }
+
+        $userModel = new User();
+        if ($userModel->findByWhatsapp($whatsapp, (string) $user['id'])) {
+            json_error(['whatsapp' => 'Nomor WhatsApp sudah digunakan oleh akun lain.']);
+        }
+
+        $updated = $userModel->update((string) $user['id'], ['whatsapp' => $whatsapp]);
+        current_user(true);
+        json_ok(['user' => public_user($updated)], 'Nomor WhatsApp berhasil disimpan.');
+    }
+
     if ($action === 'password') {
         require_method('POST');
         verify_csrf();

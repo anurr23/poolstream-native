@@ -7,4 +7,9 @@ if (is_logged_in()) {
     redirect('index.php');
 }
 
-render_page('Auth/Register', [], 'Daftar Akun');
+$draft = $_SESSION['_register_draft'] ?? null;
+unset($_SESSION['_register_draft']);
+
+render_page('Auth/Register', [
+    'draft' => is_array($draft) ? $draft : null,
+], 'Daftar Akun');

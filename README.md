@@ -6,7 +6,7 @@ dan frontend **Vue 3** (Vite). Struktur halaman mengikuti project `poolstream` (
 
 ## Menjalankan
 
-1. Buat `config/credentials.php` (contoh di `config/database.example.php`):
+1. Salin `config/credentials.example.php` menjadi `config/credentials.php` lalu sesuaikan nilainya:
    ```php
    <?php
    return [
@@ -14,7 +14,7 @@ dan frontend **Vue 3** (Vite). Struktur halaman mengikuti project `poolstream` (
        'db' => ['host' => 'host.docker.internal', 'port' => '3306', 'name' => 'poolstream', 'user' => 'root', 'pass' => 'root123'],
        'google' => ['client_id' => '', 'client_secret' => '', 'redirect' => 'http://localhost/poolstream-native/google-auth.php?action=callback'],
        'ai' => ['base_url' => 'http://host.docker.internal:20128/v1', 'api_key' => '', 'model' => 'ag/gemini-3.8-flash-high', 'timeout' => 0, 'max_tokens' => 16384],
-       'mail' => ['driver' => 'log', 'from' => 'no-reply@poolstream.test', 'from_name' => 'PoolStream'],
+       'mail' => ['driver' => 'smtp', 'from' => 'emailanda@gmail.com', 'from_name' => 'PoolStream', 'smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'encryption' => 'tls', 'username' => 'emailanda@gmail.com', 'password' => 'APP_PASSWORD']],
    ];
    ```
 2. `composer install` (Dompdf untuk PDF Evaluasi AI)
