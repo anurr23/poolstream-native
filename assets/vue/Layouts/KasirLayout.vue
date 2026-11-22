@@ -33,7 +33,7 @@ const userInitial = computed(() => userName.value.charAt(0).toUpperCase());
         <header class="bb-header">
             <div class="d-flex align-items-center gap-2 gap-sm-3 flex-grow-1 min-w-0">
                 <Link
-                    :href="route('landing')"
+                    :href="route('menu')"
                     class="bb-btn bb-btn--ghost p-2 flex-shrink-0"
                     style="border-radius: 0.5rem;"
                     title="Kembali ke Menu Utama"
@@ -59,7 +59,7 @@ const userInitial = computed(() => userName.value.charAt(0).toUpperCase());
                             </Link>
                         </li>
                         <li>
-                            <Link class="dropdown-item rounded-2 py-2 px-3" :href="route('landing')">
+                            <Link class="dropdown-item rounded-2 py-2 px-3" :href="route('menu')">
                                 <i class="bi bi-grid me-2"></i> Menu Utama
                             </Link>
                         </li>

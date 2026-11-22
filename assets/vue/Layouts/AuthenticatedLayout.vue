@@ -60,7 +60,7 @@ const userInitial = computed(() => userName.value.charAt(0).toUpperCase());
         <aside class="bb-sidebar" :class="{ 'bb-sidebar--open': isSidebarOpen }">
             <!-- Logo -->
             <div class="d-flex justify-content-between align-items-center bb-sidebar-logo">
-                <Link :href="route('landing')" class="text-decoration-none d-flex align-items-center gap-3 w-100" @click="closeSidebarMobile">
+                <Link :href="route('menu')" class="text-decoration-none d-flex align-items-center gap-3 w-100" @click="closeSidebarMobile">
                     <Logo :size="48" />
                     <div class="bb-logo-text">
                         PoolStream
@@ -74,7 +74,7 @@ const userInitial = computed(() => userName.value.charAt(0).toUpperCase());
 
             <!-- Navigation -->
             <nav class="bb-nav">
-                <Link :href="route('landing')" class="bb-nav-link" :class="{ active: route().current('landing') }" @click="closeSidebarMobile">
+                <Link :href="route('menu')" class="bb-nav-link" :class="{ active: route().current('menu') }" @click="closeSidebarMobile">
                     <i class="bi bi-speedometer2" style="color: #06b6d4;"></i>
                     Menu Utama
                 </Link>

@@ -57,7 +57,7 @@ api_handle(function (): void {
                 json_ok([], 'Login berhasil.', $target);
             }
 
-            $target = $user['role'] === 'admin' ? 'index.php' : 'dashboard.php';
+            $target = in_array($user['role'], ['admin', 'kasir'], true) ? 'menu.php' : 'dashboard.php';
             json_ok([], 'Login berhasil.', $target);
             break;
 

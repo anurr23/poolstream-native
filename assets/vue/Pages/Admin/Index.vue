@@ -100,7 +100,7 @@ const aiMenu = {
             <p class="text-secondary mb-0 small">
                 <i class="bi bi-info-circle me-1"></i>Pilih modul yang ingin dikelola.
             </p>
-            <Link :href="route('landing')" class="bb-btn bb-btn--ghost bb-btn--sm">
+            <Link :href="route('menu')" class="bb-btn bb-btn--ghost bb-btn--sm">
                 <i class="bi bi-arrow-left"></i> Kembali ke Menu Utama
             </Link>
         </div>

@@ -8,7 +8,7 @@ if (is_logged_in()) {
     if ($user['role'] === 'customer') {
         redirect(empty($user['email_verified_at']) ? 'verify-otp.php' : 'customer-home.php');
     }
-    redirect($user['role'] === 'admin' ? 'index.php' : 'dashboard.php');
+    redirect(in_array($user['role'], ['admin', 'kasir'], true) ? 'menu.php' : 'dashboard.php');
 }
 
 $status = $_SESSION['_flash']['success'] ?? null;

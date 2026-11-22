@@ -2,6 +2,7 @@
 
 const routeMap = {
     landing: 'index.php',
+    menu: 'menu.php',
     login: 'login.php',
     'api.login': 'api/auth.php?action=login',
     'api.register': 'api/auth.php?action=register',
@@ -76,6 +77,7 @@ const routeMap = {
 
 const pageRouteMap = {
     Landing: 'landing',
+    Menu: 'menu',
     Dashboard: 'dashboard',
     'Fnb/Index': 'fnb-orders.index',
     'Admin/Index': 'admin.index',
