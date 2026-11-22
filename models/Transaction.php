@@ -467,10 +467,15 @@ class Transaction
         if (!$table) {
             throw new RuntimeException('Meja untuk booking ini tidak ditemukan.');
         }
-        if (!empty($tx['expected_end_time']) && strtotime((string) $tx['expected_end_time']) < time()) {
+
+        $nowTs = time();
+        $scheduledStartTs = strtotime((string) $tx['start_time']);
+        $scheduledEndTs = !empty($tx['expected_end_time']) ? strtotime((string) $tx['expected_end_time']) : false;
+
+        if ($scheduledEndTs !== false && $scheduledEndTs < $nowTs) {
             throw new RuntimeException('Jadwal booking sudah lewat.');
         }
-        if (strtotime((string) $tx['start_time']) > time() + 30 * 60) {
+        if ($scheduledStartTs !== false && $scheduledStartTs > $nowTs + 30 * 60) {
             throw new RuntimeException('Booking belum bisa dimulai. Tunggu hingga 30 menit sebelum jadwal.');
         }
         if ($table['status'] === 'active') {
@@ -485,12 +490,72 @@ class Transaction
             throw new RuntimeException('Meja sedang dipakai sesi lain.');
         }
 
-        execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tx['table_id']]);
-        execute_sql("UPDATE transactions SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $transactionId]);
-        $this->ensureReceiptNumber($transactionId, (string) ($tx['start_time'] ?? 'now'));
+        // Jika dimulai lebih awal oleh kasir, ubah start_time ke waktu aktual
+        // dan hitung ulang expected_end_time berdasarkan durasi booking asli
+        $finalStart = (string) $tx['start_time'];
+        $finalEnd = $tx['expected_end_time'];
+        $startedEarly = false;
+
+        if ($scheduledStartTs !== false && $nowTs < $scheduledStartTs) {
+            $startedEarly = true;
+            $finalStart = date('Y-m-d H:i:s', $nowTs);
+            if ($scheduledEndTs !== false && $scheduledEndTs > $scheduledStartTs) {
+                $durationSeconds = $scheduledEndTs - $scheduledStartTs;
+                $finalEnd = date('Y-m-d H:i:s', $nowTs + $durationSeconds);
+            }
+
+            if ($finalEnd !== null) {
+                $conflict = fetch_one(
+                    "SELECT id, customer_name, start_time, expected_end_time FROM transactions
+                     WHERE table_id = :table_id AND type = 'billiard' AND status IN ('active','booked')
+                       AND id <> :id
+                       AND start_time < :end
+                       AND (expected_end_time IS NULL OR expected_end_time > :start)
+                     ORDER BY start_time ASC
+                     LIMIT 1",
+                    [
+                        ':table_id' => $tx['table_id'],
+                        ':id' => $transactionId,
+                        ':start' => $finalStart,
+                        ':end' => $finalEnd,
+                    ]
+                );
+                if ($conflict) {
+                    $cStart = date('H:i', strtotime((string) $conflict['start_time']));
+                    $cEnd = !empty($conflict['expected_end_time']) ? date('H:i', strtotime((string) $conflict['expected_end_time'])) : '';
+                    $range = $cEnd !== '' ? "{$cStart} - {$cEnd}" : $cStart;
+                    throw new RuntimeException("Tidak bisa memulai lebih awal karena bentrok dengan pesanan {$conflict['customer_name']} ({$range}).");
+                }
+            }
+        }
+
+        $this->db->beginTransaction();
+        try {
+            execute_sql("UPDATE tables SET status = 'active', updated_at = NOW() WHERE id = :id", [':id' => $tx['table_id']]);
+            execute_sql(
+                "UPDATE transactions
+                 SET status = 'active', start_time = :start_time, expected_end_time = :expected_end_time, updated_at = NOW()
+                 WHERE id = :id",
+                [
+                    ':id' => $transactionId,
+                    ':start_time' => $finalStart,
+                    ':expected_end_time' => $finalEnd,
+                ]
+            );
+            $this->ensureReceiptNumber($transactionId, $finalStart);
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
         RelayService::setLight($table, true);
 
-        return $this->find($transactionId);
+        $updated = $this->find($transactionId);
+        $updated['started_early'] = $startedEarly;
+        return $updated;
     }
 
     public function autoCheckoutExpired(): int

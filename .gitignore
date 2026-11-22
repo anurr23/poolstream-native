@@ -20,3 +20,4 @@ config/database.local.php
 /.zed
 /node_modules
 /vendor
+cloudflared.exe

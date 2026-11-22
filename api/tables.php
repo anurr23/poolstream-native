@@ -32,6 +32,13 @@ api_handle(function (): void {
     $user = current_user();
     $txModel = new Transaction();
     $tableModel = new Table();
+    $dashboardState = static function () use ($tableModel, $txModel): array {
+        return [
+            'tables' => $tableModel->allWithActiveAndRecentTransactions(),
+            'upcomingBookings' => $txModel->upcomingBookings(),
+            'customers' => (new User())->customers(),
+        ];
+    };
 
     switch ($action) {
         case 'start':
@@ -63,8 +70,7 @@ api_handle(function (): void {
             $msg = ($tx['status'] ?? 'active') === 'booked'
                 ? 'Jadwal pesanan meja berhasil dibuat.'
                 : 'Sesi meja berhasil dimulai.';
-            flash('success', $msg);
-            json_ok(['transaction' => $tx], $msg, 'dashboard.php');
+            json_ok(['transaction' => $tx, 'props' => $dashboardState()], $msg);
             break;
 
         case 'update':
@@ -89,8 +95,7 @@ api_handle(function (): void {
             }
 
             $txModel->updateSession($tableId, $transactionId, $packageId, $duration, $items, $customerName, $customerUserId, $startDateTime);
-            flash('success', 'Pesanan berhasil diperbarui.');
-            json_ok([], 'Pesanan berhasil diperbarui.', 'dashboard.php');
+            json_ok(['props' => $dashboardState()], 'Pesanan berhasil diperbarui.');
             break;
 
         case 'stop':
@@ -99,8 +104,7 @@ api_handle(function (): void {
                 json_error(['table_id' => 'Meja tidak ditemukan.']);
             }
             $tx = $txModel->stopSession($tableId);
-            flash('success', 'Meja berhasil dihentikan / checkout.');
-            json_ok(['transaction' => $tx], 'Meja berhasil dihentikan / checkout.', 'dashboard.php');
+            json_ok(['transaction' => $tx, 'props' => $dashboardState()], 'Meja berhasil dihentikan / checkout.');
             break;
 
         case 'start-booking':
@@ -109,8 +113,12 @@ api_handle(function (): void {
                 json_error(['booking' => 'Booking tidak ditemukan.']);
             }
             $booking = $txModel->startBooking($transactionId);
-            flash('success', 'Booking ' . $booking['customer_name'] . ' berhasil dimulai.');
-            json_ok(['transaction' => $booking], null, 'dashboard.php');
+            $startLabel = !empty($booking['start_time']) ? date('H:i', strtotime((string) $booking['start_time'])) : '';
+            $endLabel = !empty($booking['expected_end_time']) ? date('H:i', strtotime((string) $booking['expected_end_time'])) : '';
+            $msg = !empty($booking['started_early']) && $startLabel !== '' && $endLabel !== ''
+                ? "Booking {$booking['customer_name']} dimulai lebih awal. Jadwal disesuaikan ke {$startLabel} - {$endLabel}."
+                : 'Booking ' . $booking['customer_name'] . ' berhasil dimulai.';
+            json_ok(['transaction' => $booking, 'props' => $dashboardState()], $msg);
             break;
 
         case 'cancel-booking':
@@ -119,8 +127,8 @@ api_handle(function (): void {
                 json_error(['booking' => 'Booking tidak ditemukan.']);
             }
             $booking = $txModel->cancelBookingByStaff($transactionId);
-            flash('success', 'Booking ' . ($booking['customer_name'] ?? '') . ' berhasil dibatalkan.');
-            json_ok(['transaction' => $booking], null, 'dashboard.php');
+            $msg = 'Booking ' . ($booking['customer_name'] ?? '') . ' berhasil dibatalkan.';
+            json_ok(['transaction' => $booking, 'props' => $dashboardState()], $msg);
             break;
 
         case 'toggle-light':
@@ -130,8 +138,8 @@ api_handle(function (): void {
                 json_error(['table_id' => 'Meja tidak ditemukan.']);
             }
             $isOn = RelayService::toggle($raw);
-            flash('success', 'Lampu ' . $raw['name'] . ' berhasil ' . ($isOn ? 'dinyalakan' : 'dimatikan') . '.');
-            json_ok(['is_light_on' => $isOn], null, 'dashboard.php');
+            $msg = 'Lampu ' . $raw['name'] . ' berhasil ' . ($isOn ? 'dinyalakan' : 'dimatikan') . '.';
+            json_ok(['is_light_on' => $isOn, 'props' => $dashboardState()], $msg);
             break;
 
         case 'send-receipt':
@@ -142,6 +150,9 @@ api_handle(function (): void {
             $tx = $txModel->find($transactionId);
             if (!$tx) {
                 json_error(['receipt' => 'Transaksi tidak ditemukan.'], 404);
+            }
+            if (($tx['type'] ?? 'billiard') === 'billiard' && ($tx['status'] ?? '') !== 'completed') {
+                json_error(['receipt' => 'Struk hanya dapat dikirim setelah sesi selesai.'], 422);
             }
             if (empty($tx['receipt_no'])) {
                 $tx['receipt_no'] = $txModel->ensureReceiptNumber($transactionId, (string) ($tx['end_time'] ?? $tx['start_time'] ?? $tx['created_at'] ?? 'now'));
@@ -222,6 +233,9 @@ api_handle(function (): void {
             $tx = $txModel->find($transactionId);
             if (!$tx) {
                 json_error(['receipt' => 'Transaksi tidak ditemukan.'], 404);
+            }
+            if (($tx['type'] ?? 'billiard') === 'billiard' && ($tx['status'] ?? '') !== 'completed') {
+                json_error(['receipt' => 'Struk hanya dapat dikirim setelah sesi selesai.'], 422);
             }
             if (empty($tx['receipt_no'])) {
                 $tx['receipt_no'] = $txModel->ensureReceiptNumber($transactionId, (string) ($tx['end_time'] ?? $tx['start_time'] ?? $tx['created_at'] ?? 'now'));

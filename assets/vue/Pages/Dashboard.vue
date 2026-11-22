@@ -31,6 +31,41 @@ const props = defineProps({
     }
 });
 
+const page = usePage();
+const isSyncing = ref(false);
+const lastSyncedAt = ref(new Date());
+
+const syncDashboard = async ({ silent = true } = {}) => {
+    if (isSyncing.value) return;
+    isSyncing.value = true;
+    try {
+        const res = await fetch(route('tables.list'), {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+            credentials: 'same-origin',
+            cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        const data = json?.data;
+        if (data) {
+            if (Array.isArray(data.tables)) page.props.tables = data.tables;
+            if (Array.isArray(data.upcomingBookings)) page.props.upcomingBookings = data.upcomingBookings;
+            if (Array.isArray(data.customers)) page.props.customers = data.customers;
+            if (Array.isArray(data.packages)) page.props.packages = data.packages;
+            if (Array.isArray(data.fnbItems)) page.props.fnbItems = data.fnbItems;
+            lastSyncedAt.value = new Date();
+        }
+    } catch (e) {
+        if (!silent) console.error('Sync dashboard gagal:', e);
+    } finally {
+        isSyncing.value = false;
+    }
+};
+
 // ─── Helpers ────────────────────────────────────────────
 const formatRupiah = (val) => {
     const amount = Number(val) || 0;
@@ -193,6 +228,7 @@ const toggleTableLight = (table) => {
     togglingLight.value = true;
     router.post(route('tables.toggle-light', table.id), {}, {
         preserveScroll: true,
+        silent: true,
         onFinish: () => {
             togglingLight.value = false;
         }
@@ -200,6 +236,10 @@ const toggleTableLight = (table) => {
 };
 
 watch(() => props.tables, (newTables) => {
+    if (selectedTable.value) {
+        const found = newTables.find(t => t.id === selectedTable.value.id);
+        if (found) selectedTable.value = found;
+    }
     if (selectedTableForHistory.value) {
         const found = newTables.find(t => t.id === selectedTableForHistory.value.id);
         if (found) selectedTableForHistory.value = found;
@@ -217,8 +257,13 @@ const historySearch = ref('');
 const openSendReceiptId = ref(null);
 const sendingReceiptEmailId = ref(null);
 
-const toggleSendReceiptMenu = (txId) => {
-    openSendReceiptId.value = openSendReceiptId.value === txId ? null : txId;
+const canIssueReceipt = (tx) => {
+    return tx?.status === 'completed';
+};
+
+const toggleSendReceiptMenu = (tx) => {
+    if (!canIssueReceipt(tx)) return;
+    openSendReceiptId.value = openSendReceiptId.value === tx.id ? null : tx.id;
 };
 
 const txContact = (tx) => {
@@ -230,7 +275,13 @@ const hasAnyTxContact = (tx) => {
     return !!(c.whatsapp || c.email);
 };
 
+const handlePrintTxReceipt = (tx, tableName = '') => {
+    if (!canIssueReceipt(tx)) return;
+    printReceipt({ ...tx, table_name: tableName || tx.table?.name || '' });
+};
+
 const handleSendReceiptWa = async (tx, tableName = '') => {
+    if (!canIssueReceipt(tx)) return;
     const c = txContact(tx);
     if (!c.whatsapp || sendingReceiptEmailId.value === tx.id) return;
     openSendReceiptId.value = null;
@@ -240,6 +291,7 @@ const handleSendReceiptWa = async (tx, tableName = '') => {
         await router.post(route('transactions.send-receipt-wa', tx.id), formData, {
             preserveScroll: true,
             preserveState: true,
+            silent: true,
         });
     } catch (e) {
         console.error(e);
@@ -249,6 +301,7 @@ const handleSendReceiptWa = async (tx, tableName = '') => {
 };
 
 const handleSendReceiptEmail = (tx, tableName = '') => {
+    if (!canIssueReceipt(tx)) return;
     const c = txContact(tx);
     if (!c.email || sendingReceiptEmailId.value === tx.id) return;
     openSendReceiptId.value = null;
@@ -258,6 +311,7 @@ const handleSendReceiptEmail = (tx, tableName = '') => {
     }, {
         preserveScroll: true,
         preserveState: true,
+        silent: true,
         onFinish: () => {
             sendingReceiptEmailId.value = null;
         },
@@ -481,6 +535,10 @@ const updateTimers = () => {
                     router.post(route('tables.stop', table.id), {}, {
                         preserveScroll: true,
                         preserveState: true,
+                        silent: true,
+                        onError: () => {
+                            autoStoppingTables.value.delete(table.id);
+                        },
                     });
                 }
             }
@@ -504,6 +562,7 @@ const updateTimers = () => {
                 router.post(route('tables.start-booking', booking.id), {}, {
                     preserveScroll: true,
                     preserveState: true,
+                    silent: true,
                     onFinish: () => {
                         autoStartingBookings.value.delete(booking.id);
                     },
@@ -611,6 +670,14 @@ const conflictingOrderBooking = computed(() => {
 });
 
 let interval;
+let syncInterval;
+
+const handleVisibilityOrFocus = () => {
+    if (!document.hidden) {
+        syncDashboard({ silent: true });
+    }
+};
+
 onMounted(() => {
     updateTimers();
     updateClock();
@@ -618,9 +685,19 @@ onMounted(() => {
         updateTimers();
         updateClock();
     }, 1000);
+    syncInterval = setInterval(() => {
+        if (!document.hidden) {
+            syncDashboard({ silent: true });
+        }
+    }, 10000);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 });
 onUnmounted(() => {
     clearInterval(interval);
+    clearInterval(syncInterval);
+    document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.removeEventListener('focus', handleVisibilityOrFocus);
 });
 
 // ─── Session Detail Modal (Active Session & Scheduled Booking Edit) ──
@@ -1062,6 +1139,18 @@ const getFilteredHistory = (transactions) => {
                 <button
                     type="button"
                     class="bb-btn bb-btn--ghost d-flex align-items-center gap-2 py-2 px-3 border flex-shrink-0"
+                    style="border-radius: 50rem; font-size: 0.8rem; text-transform: none;"
+                    :disabled="isSyncing"
+                    :title="'Sinkron otomatis tiap 10 dtk — klik untuk sinkron sekarang'"
+                    @click="syncDashboard({ silent: false })"
+                >
+                    <i class="bi bi-arrow-repeat" :class="{ 'bb-sync-spin': isSyncing }"></i>
+                    <span class="d-none d-md-inline fw-semibold">{{ isSyncing ? 'Sync...' : 'Sync' }}</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="bb-btn bb-btn--ghost d-flex align-items-center gap-2 py-2 px-3 border flex-shrink-0"
                     :style="upcomingBookings.length > 0
                         ? 'border-color: rgba(6, 182, 212, 0.45) !important; background: rgba(6, 182, 212, 0.08); color: #06b6d4; border-radius: 50rem; font-size: 0.8rem; text-transform: none;'
                         : 'border-radius: 50rem; font-size: 0.8rem; text-transform: none;'"
@@ -1346,6 +1435,7 @@ const getFilteredHistory = (transactions) => {
                                     type="button"
                                     class="bb-btn bb-btn--success flex-grow-1 py-2 d-flex align-items-center justify-content-center gap-1 fw-bold"
                                     style="border-radius: 0.65rem; font-size: 0.82rem; text-transform: none;"
+                                    :title="nowTick < new Date(booking.start_time).getTime() ? 'Mulai lebih awal — jam mulai & selesai dihitung ulang dari sekarang' : 'Mulai sesi sesuai jadwal'"
                                     @click="startBooking(booking)"
                                 >
                                     <i class="bi bi-play-fill fs-6"></i> Mulai Sesi Sekarang
@@ -1509,6 +1599,7 @@ const getFilteredHistory = (transactions) => {
                                             type="button"
                                             class="bb-btn bb-btn--success bb-btn--sm py-1 px-3 ms-auto"
                                             style="text-transform: none; font-size: 0.78rem;"
+                                            :title="nowTick < new Date(booking.start_time).getTime() ? 'Mulai lebih awal — jam mulai & selesai dihitung ulang dari sekarang' : 'Mulai sesi sesuai jadwal'"
                                             @click="startBooking(booking)"
                                         >
                                             <i class="bi bi-play-fill"></i> Mulai Sesi
@@ -1590,7 +1681,14 @@ const getFilteredHistory = (transactions) => {
                                         <button v-if="tx.status === 'active'" @click.stop="showTableHistoryModal = false; openSessionModal(selectedTableForHistory);" class="bb-btn bb-btn--ghost bb-btn--sm text-primary" title="Edit Sesi">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
-                                        <button @click.stop="printReceipt({...tx, table_name: selectedTableForHistory.name})" class="bb-btn bb-btn--ghost bb-btn--sm" title="Cetak Struk">
+                                        <button
+                                            type="button"
+                                            @click.stop="handlePrintTxReceipt(tx, selectedTableForHistory.name)"
+                                            class="bb-btn bb-btn--ghost bb-btn--sm"
+                                            :disabled="!canIssueReceipt(tx)"
+                                            :title="canIssueReceipt(tx) ? 'Cetak Struk' : 'Struk hanya dapat dicetak setelah sesi selesai'"
+                                            :style="!canIssueReceipt(tx) ? 'opacity: 0.45; cursor: not-allowed;' : ''"
+                                        >
                                             <i class="bi bi-printer"></i>
                                         </button>
 
@@ -1599,11 +1697,13 @@ const getFilteredHistory = (transactions) => {
                                             <button
                                                 type="button"
                                                 class="bb-btn bb-btn--ghost bb-btn--sm d-inline-flex align-items-center gap-1"
-                                                :class="hasAnyTxContact(tx) ? 'text-info' : 'text-secondary'"
-                                                :disabled="!hasAnyTxContact(tx) || sendingReceiptEmailId === tx.id"
-                                                :title="hasAnyTxContact(tx) ? 'Kirim Struk (WA / Email)' : 'Kontak WA & Email customer belum tersedia'"
-                                                style="text-transform: none;"
-                                                @click.stop="toggleSendReceiptMenu(tx.id)"
+                                                :class="canIssueReceipt(tx) && hasAnyTxContact(tx) ? 'text-info' : 'text-secondary'"
+                                                :disabled="!canIssueReceipt(tx) || !hasAnyTxContact(tx) || sendingReceiptEmailId === tx.id"
+                                                :title="!canIssueReceipt(tx)
+                                                    ? 'Struk hanya dapat dikirim setelah sesi selesai'
+                                                    : (hasAnyTxContact(tx) ? 'Kirim Struk (WA / Email)' : 'Kontak WA & Email customer belum tersedia')"
+                                                :style="!canIssueReceipt(tx) || !hasAnyTxContact(tx) ? 'text-transform: none; opacity: 0.45; cursor: not-allowed;' : 'text-transform: none;'"
+                                                @click.stop="toggleSendReceiptMenu(tx)"
                                             >
                                                 <span v-if="sendingReceiptEmailId === tx.id" class="spinner-border spinner-border-sm" style="width: 12px; height: 12px;"></span>
                                                 <i v-else class="bi bi-send"></i>
@@ -2499,3 +2599,14 @@ const getFilteredHistory = (transactions) => {
 
     </KasirLayout>
 </template>
+
+<style scoped>
+@keyframes bbSyncSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.bb-sync-spin {
+    display: inline-block;
+    animation: bbSyncSpin 0.8s linear infinite;
+}
+</style>

@@ -27,6 +27,7 @@ const routeMap = {
     'fnb-orders.index': 'fnb-orders.php',
     'fnb-orders.store': 'api/fnb-orders.php?action=create',
     'fnb-orders.checkout': 'api/fnb-orders.php?action=checkout&id={0}',
+    'tables.list': 'api/tables.php?action=list',
     'tables.start': 'api/tables.php?action=start&id={0}',
     'tables.stop': 'api/tables.php?action=stop&id={0}',
     'tables.toggle-light': 'api/tables.php?action=toggle-light&id={0}',
@@ -155,7 +156,17 @@ function blockUi(show) {
 
 function setFlash(type, message) {
     if (!page.props.flash) page.props.flash = { success: null, error: null };
-    page.props.flash[type] = message;
+    page.props.flash[type] = null;
+    queueMicrotask(() => {
+        page.props.flash[type] = message;
+    });
+}
+
+function mergePageProps(props) {
+    if (!props || typeof props !== 'object') return;
+    Object.entries(props).forEach(([key, value]) => {
+        page.props[key] = value;
+    });
 }
 
 function setErrors(errors) {
@@ -181,7 +192,8 @@ function appendValue(formData, key, value) {
 
 async function request(method, url, data = {}, options = {}) {
     const actualMethod = String(method || 'get').toUpperCase();
-    blockUi(true);
+    const isSilent = !!options.silent;
+    if (!isSilent) blockUi(true);
 
     try {
         let response;
@@ -245,8 +257,9 @@ async function request(method, url, data = {}, options = {}) {
 
         if (json?.errors) setErrors(json.errors);
         else setErrors({});
-        if (json?.message) setFlash('success', json.message);
-        blockUi(false);
+        if (json?.props) mergePageProps(json.props);
+        if (json?.message && !options.suppressFlash) setFlash('success', json.message);
+        if (!isSilent) blockUi(false);
         if (typeof options.onSuccess === 'function') await options.onSuccess(json || {});
 
         if (json?.redirect) {
@@ -255,11 +268,11 @@ async function request(method, url, data = {}, options = {}) {
         }
     } catch (error) {
         console.error(error);
-        setFlash('error', 'Terjadi kesalahan jaringan.');
+        if (!isSilent) setFlash('error', 'Terjadi kesalahan jaringan.');
         if (typeof options.onError === 'function') options.onError({ _general: 'Terjadi kesalahan jaringan.' });
     } finally {
         if (typeof options.onFinish === 'function') options.onFinish();
-        blockUi(false);
+        if (!isSilent) blockUi(false);
     }
 }
 

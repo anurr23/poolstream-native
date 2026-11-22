@@ -195,7 +195,7 @@ const formatDateShort = (value) => {
                             >
                                 <div style="min-width: 0;">
                                     <div class="bb-ai-history__period">
-                                        {{ formatDateShort(item.start_date) }} â€” {{ formatDateShort(item.end_date) }}
+                                        {{ formatDateShort(item.start_date) }} &ndash; {{ formatDateShort(item.end_date) }}
                                     </div>
                                     <div class="bb-ai-history__meta">
                                         dibuat {{ formatDateShort(item.created_at) }}
