@@ -4,6 +4,7 @@ import { Head, Link, usePage } from '@/shims/inertia.js';
 import { animate, stagger } from 'animejs';
 import Logo from '@/Components/Logo.vue';
 import MenuIllustration from '@/Components/MenuIllustration.vue';
+import HeroBilliard3D from '@/Components/HeroBilliard3D.vue';
 
 const props = defineProps({
     role: { type: String, default: 'kasir' },
@@ -94,6 +95,13 @@ const menus = computed(() => allMenus.filter((menu) => !menu.adminOnly || isAdmi
 
 // ─── Animasi ────────────────────────────────────────────
 const rootRef = ref(null);
+const scrollProgress = ref(0);
+const onScroll = () => {
+    if (!rootRef.value) return;
+    const el = rootRef.value;
+    const maxScroll = Math.max(1, el.scrollHeight - el.clientHeight);
+    scrollProgress.value = Math.min(1, Math.max(0, el.scrollTop / maxScroll));
+};
 const reduceMotion = () =>
     typeof window !== 'undefined' &&
     window.matchMedia &&
@@ -101,6 +109,11 @@ const reduceMotion = () =>
 
 onMounted(() => {
     isDark.value = localStorage.theme !== 'light';
+    if (!isDark.value) {
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+    }
+    rootRef.value?.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
     clockTimer = setInterval(() => {
         now.value = new Date();
     }, 1000);
@@ -150,7 +163,10 @@ onMounted(() => {
     }
 });
 
-onBeforeUnmount(() => clearInterval(clockTimer));
+onBeforeUnmount(() => {
+    clearInterval(clockTimer);
+    rootRef.value?.removeEventListener('scroll', onScroll);
+});
 </script>
 
 <template>
@@ -230,9 +246,9 @@ onBeforeUnmount(() => clearInterval(clockTimer));
         </header>
 
         <main class="bbh-shell bbh-main">
-            <!-- Greeting -->
+            <!-- Greeting + 3D Table -->
             <div class="bbh-greet">
-                <div>
+                <div class="bbh-greet__copy">
                     <span class="bbh-chip" data-hub-top>
                         <i :class="isAdmin ? 'bi bi-shield-lock-fill' : 'bi bi-person-badge-fill'"></i>
                         {{ isAdmin ? 'Administrator' : 'Kasir' }}
@@ -245,11 +261,21 @@ onBeforeUnmount(() => clearInterval(clockTimer));
                             ? 'Pilih modul yang ingin kamu kelola hari ini.'
                             : 'Pilih menu operasional untuk mulai bekerja.' }}
                     </p>
+                    <div class="bbh-date" data-hub-top>
+                        <span class="bbh-date__day"><i class="bi bi-calendar3 me-1"></i>{{ dateLabel }}</span>
+                        <span class="bbh-date__sep">&middot;</span>
+                        <span class="bbh-date__time">{{ clock }}</span>
+                    </div>
                 </div>
 
-                <div class="bbh-date" data-hub-top>
-                    <span class="bbh-date__day">{{ dateLabel }}</span>
-                    <span class="bbh-date__time">{{ clock }}</span>
+                <div class="bbh-greet__stage" data-hub-top>
+                    <HeroBilliard3D :is-dark="isDark" :scroll-progress="scrollProgress" :show-lamp="true">
+                        <template #fallback>
+                            <div class="bbh-stage-fallback">
+                                <MenuIllustration type="meja" />
+                            </div>
+                        </template>
+                    </HeroBilliard3D>
                 </div>
             </div>
 
@@ -507,12 +533,35 @@ onBeforeUnmount(() => clearInterval(clockTimer));
 }
 
 .bbh-greet {
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    align-items: center;
+    gap: clamp(1rem, 3vw, 2.25rem);
+    margin-bottom: clamp(1.25rem, 2.8vw, 2rem);
+}
+.bbh-greet__stage {
+    position: relative;
+    width: 100%;
+    max-width: 650px;
+    margin-left: auto;
+}
+.bbh-greet__stage::before {
+    content: '';
+    position: absolute;
+    inset: 6% 4% 8%;
+    background: radial-gradient(55% 55% at 50% 45%, rgba(16, 185, 129, 0.32), transparent 72%);
+    filter: blur(42px);
+    pointer-events: none;
+}
+.bbh-stage-fallback {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-    margin-bottom: clamp(1.75rem, 4vw, 2.75rem);
+    justify-content: center;
+    padding: 1rem;
+    color: var(--bbh-emerald);
+}
+.bbh-stage-fallback :deep(.bb-illustration) {
+    width: 220px;
+    height: auto;
 }
 .bbh-greet [data-hub-top],
 .bbh-date[data-hub-top],
@@ -551,19 +600,27 @@ onBeforeUnmount(() => clearInterval(clockTimer));
     font-size: 0.9rem;
 }
 .bbh-date {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    text-align: right;
-    gap: 0.2rem;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding: 0.42rem 0.85rem;
+    border-radius: 50rem;
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid var(--bbh-line);
 }
 .bbh-date__day {
-    font-size: 0.72rem;
+    font-size: 0.74rem;
     color: var(--bbh-muted);
     text-transform: capitalize;
 }
+.bbh-date__sep {
+    color: var(--bbh-muted);
+    opacity: 0.55;
+}
 .bbh-date__time {
-    font-size: 1.05rem;
+    font-size: 0.82rem;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     color: var(--bbh-emerald);
@@ -734,12 +791,13 @@ onBeforeUnmount(() => clearInterval(clockTimer));
     .bbh-grid--compact .bbh-card__art :deep(.bb-illustration) {
         max-width: 120px;
     }
-    .bbh-date {
-        align-items: flex-start;
-        text-align: left;
-    }
     .bbh-greet {
-        gap: 0.75rem;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+    .bbh-greet__stage {
+        max-width: 100%;
+        margin: 0 auto;
     }
 }
 

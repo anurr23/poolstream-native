@@ -247,15 +247,6 @@ const playHero = () => {
         });
     }
 
-    animate(root.querySelectorAll('.bbp-float'), {
-        opacity: [0, 1],
-        translateY: [18, 0],
-        scale: [0.92, 1],
-        duration: 800,
-        delay: stagger(150, { start: 900 }),
-        ease: 'outBack',
-    });
-
     // Gerak idle yang lembut agar ilustrasi SVG fallback terasa hidup.
     if (balls.length) {
         animate(balls, {
@@ -289,15 +280,6 @@ const playHero = () => {
             ease: 'inOutQuad',
         });
     }
-
-    animate(root.querySelectorAll('.bbp-float'), {
-        translateY: [-5, 5],
-        duration: 3600,
-        loop: true,
-        alternate: true,
-        delay: stagger(400, { start: 1800 }),
-        ease: 'inOutSine',
-    });
 };
 
 const observeReveals = () => {
@@ -619,35 +601,6 @@ onUnmounted(() => {
                         </svg>
                             </template>
                         </HeroBilliard3D>
-
-                        <div class="bbp-float bbp-float--a">
-                            <span class="bbp-float__icon bbp-float__icon--emerald">
-                                <i class="bi bi-columns-gap"></i>
-                            </span>
-                            <div>
-                                <strong>{{ availableNow }} meja</strong>
-                                <span>tersedia sekarang</span>
-                            </div>
-                            <span class="bbp-live bbp-live--sm"></span>
-                        </div>
-
-                        <div class="bbp-float bbp-float--b">
-                            <div class="bbp-float__head">
-                                <span class="bbp-float__icon bbp-float__icon--amber">
-                                    <i class="bi bi-cup-hot-fill"></i>
-                                </span>
-                                <div>
-                                    <strong>Pesanan meja 3</strong>
-                                    <span>diantar ke meja</span>
-                                </div>
-                            </div>
-                            <div class="bbp-float__row">
-                                <span>Kopi susu × 2</span><em>Rp 36.000</em>
-                            </div>
-                            <div class="bbp-float__row">
-                                <span>French fries</span><em>Rp 25.000</em>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </section>

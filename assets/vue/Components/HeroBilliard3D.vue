@@ -4,6 +4,8 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 const props = defineProps({
     isDark: { type: Boolean, default: true },
     scrollProgress: { type: Number, default: 0 },
+    compact: { type: Boolean, default: false },
+    showLamp: { type: Boolean, default: false },
 });
 
 const hostRef = ref(null);
@@ -244,20 +246,103 @@ onMounted(async () => {
         const tableGroup = new THREE.Group();
         scene.add(tableGroup);
 
-        // ─── Overhead Spotlight Beam + Floating Chalk Dust (Opsi 3) ─
+        // ─── Overhead Spotlight Beam + Hanging Billiard Lamp + Chalk Dust ─
         const beamMat = track(
             new THREE.MeshBasicMaterial({
                 color: 0xa7f3d0,
                 transparent: true,
-                opacity: 0.045,
+                opacity: props.showLamp ? 0.085 : 0.045,
                 depthWrite: false,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending,
             })
         );
-        const beamCone = new THREE.Mesh(track(new THREE.ConeGeometry(2.75, 3.6, 32, 1, true)), beamMat);
-        beamCone.position.set(0, 1.85, 0);
+        const beamCone = new THREE.Mesh(
+            track(new THREE.ConeGeometry(props.showLamp ? 3.05 : 2.75, props.showLamp ? 2.45 : 3.6, 32, 1, true)),
+            beamMat
+        );
+        beamCone.position.set(0, props.showLamp ? 1.25 : 1.85, 0);
         tableGroup.add(beamCone);
+
+        let lampGroup = null;
+        let lampBulbMat = null;
+        let lampShadeGlowMat = null;
+        if (props.showLamp) {
+            lampGroup = new THREE.Group();
+            lampGroup.position.set(0, 2.38, 0);
+
+            const metalMat = track(
+                new THREE.MeshStandardMaterial({
+                    color: 0x1e293b,
+                    roughness: 0.28,
+                    metalness: 0.85,
+                })
+            );
+            const brassMat = track(
+                new THREE.MeshStandardMaterial({
+                    color: 0xf59e0b,
+                    roughness: 0.25,
+                    metalness: 0.82,
+                })
+            );
+            lampShadeGlowMat = track(
+                new THREE.MeshPhysicalMaterial({
+                    color: 0x059669,
+                    emissive: 0x10b981,
+                    emissiveIntensity: 0.35,
+                    roughness: 0.2,
+                    metalness: 0.15,
+                    clearcoat: 0.9,
+                    side: THREE.DoubleSide,
+                })
+            );
+            lampBulbMat = track(
+                new THREE.MeshBasicMaterial({
+                    color: 0xfffbeb,
+                })
+            );
+
+            // Horizontal bar
+            const bar = new THREE.Mesh(track(new THREE.CylinderGeometry(0.032, 0.032, 3.25, 16)), metalMat);
+            bar.rotation.z = Math.PI / 2;
+            bar.position.y = 0.24;
+            lampGroup.add(bar);
+
+            // Two ceiling suspension rods
+            const rodGeo = track(new THREE.CylinderGeometry(0.016, 0.016, 1.4, 12));
+            [-0.95, 0.95].forEach((rx) => {
+                const rod = new THREE.Mesh(rodGeo, metalMat);
+                rod.position.set(rx, 0.94, 0);
+                lampGroup.add(rod);
+            });
+
+            // 3 iconic emerald billiard lamp shades + warm glowing bulbs
+            const shadeGeo = track(new THREE.ConeGeometry(0.42, 0.28, 28, 1, true));
+            const capGeo = track(new THREE.CylinderGeometry(0.08, 0.11, 0.08, 18));
+            const rimGeo = track(new THREE.TorusGeometry(0.42, 0.015, 10, 28));
+            const bulbGeo = track(new THREE.SphereGeometry(0.095, 16, 12));
+
+            [-1.32, 0, 1.32].forEach((sx) => {
+                const cap = new THREE.Mesh(capGeo, brassMat);
+                cap.position.set(sx, 0.17, 0);
+                lampGroup.add(cap);
+
+                const shade = new THREE.Mesh(shadeGeo, lampShadeGlowMat);
+                shade.position.set(sx, 0.02, 0);
+                lampGroup.add(shade);
+
+                const rim = new THREE.Mesh(rimGeo, brassMat);
+                rim.rotation.x = Math.PI / 2;
+                rim.position.set(sx, -0.12, 0);
+                lampGroup.add(rim);
+
+                const bulb = new THREE.Mesh(bulbGeo, lampBulbMat);
+                bulb.position.set(sx, -0.05, 0);
+                lampGroup.add(bulb);
+            });
+
+            tableGroup.add(lampGroup);
+        }
 
         const tableDustCount = 58;
         const tableDustPos = new Float32Array(tableDustCount * 3);
@@ -332,11 +417,14 @@ onMounted(async () => {
 
         applyThemeFn = (dark) => {
             hemiLight.intensity = dark ? 0.85 : 1.35;
-            spotLight.intensity = dark ? 42 : 48;
+            spotLight.intensity = dark ? (props.showLamp ? 52 : 42) : (props.showLamp ? 56 : 48);
             rimEmerald.intensity = dark ? 7.5 : 4.2;
             rimCyan.intensity = dark ? 6.0 : 3.5;
             renderer.toneMappingExposure = dark ? 1.15 : 1.24;
-            beamMat.opacity = dark ? 0.045 : 0.018;
+            beamMat.opacity = dark ? (props.showLamp ? 0.085 : 0.045) : (props.showLamp ? 0.032 : 0.018);
+            if (lampShadeGlowMat) {
+                lampShadeGlowMat.emissiveIntensity = dark ? 0.42 : 0.18;
+            }
             tableDustMat.opacity = dark ? 0.65 : 0.28;
             tableDustMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
             tableDustMat.needsUpdate = true;
@@ -818,8 +906,8 @@ onMounted(async () => {
         };
 
         // ─── Pointer Parallax + Drag Orbit ──────────────
-        let targetYaw = 0.22;
-        let targetPitch = 0.68;
+        let targetYaw = props.showLamp ? 0.24 : 0.22;
+        let targetPitch = props.showLamp ? 0.44 : 0.68;
         let currentYaw = targetYaw;
         let currentPitch = targetPitch;
         let pointerX = 0;
@@ -924,16 +1012,21 @@ onMounted(async () => {
             currentYaw += (desiredYaw - currentYaw) * Math.min(1, dt * 6);
             currentPitch += (desiredPitch - currentPitch) * Math.min(1, dt * 6);
 
-            const camDist = 7.75;
+            const camDist = props.showLamp ? 7.35 : 7.75;
+            const lookY = props.showLamp ? 0.58 : 0.05;
             camera.position.set(
                 Math.sin(currentYaw) * Math.cos(currentPitch) * camDist,
-                Math.sin(currentPitch) * camDist + 0.55,
+                Math.sin(currentPitch) * camDist + (props.showLamp ? 0.85 : 0.55),
                 Math.cos(currentYaw) * Math.cos(currentPitch) * camDist
             );
-            camera.lookAt(0, 0.05, 0.04);
+            camera.lookAt(0, lookY, 0.04);
 
-            // Subtle table hover float
-            tableGroup.position.y = Math.sin(elapsed * 1.1) * 0.035;
+            // Subtle table hover float & gentle lamp sway
+            tableGroup.position.y = Math.sin(elapsed * 1.1) * 0.03;
+            if (lampGroup) {
+                lampGroup.rotation.z = Math.sin(elapsed * 0.9) * 0.018;
+                lampGroup.rotation.x = Math.cos(elapsed * 0.7) * 0.012;
+            }
 
             // Animate 3D chalk dust motes floating in spotlight beam
             const dustAttr = tableDustGeo.getAttribute('position');
@@ -1083,7 +1176,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="bbp-3d-wrap" :class="{ 'is-ready': ready, 'is-dragging': isDragging }">
+    <div class="bbp-3d-wrap" :class="{ 'is-ready': ready, 'is-dragging': isDragging, 'is-compact': compact }">
         <slot v-if="fallback" name="fallback" />
         <template v-else>
             <div ref="hostRef" class="bbp-3d-stage" role="img" aria-label="Meja biliar 3D interaktif PoolStream">
@@ -1119,6 +1212,10 @@ onUnmounted(() => {
     touch-action: pan-y;
     user-select: none;
     -webkit-user-select: none;
+}
+
+.bbp-3d-wrap.is-compact .bbp-3d-stage {
+    aspect-ratio: 560 / 335;
 }
 
 .bbp-3d-wrap.is-dragging .bbp-3d-stage {
