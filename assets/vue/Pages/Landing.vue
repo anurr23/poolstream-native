@@ -116,6 +116,53 @@ const perks = [
 // ─── Counter angka ──────────────────────────────────────
 const counters = ref({ tables: 0, total: 0, packages: 0 });
 
+// ─── Efek mengetik pada judul (bergantian, tidak berhenti) ─
+const typePhrases = ['Giliran kamu.', 'Meja favoritmu.', 'Teman mainmu.'];
+const typedText = ref('');
+let phraseIndex = 0;
+let charIndex = 0;
+let deleting = false;
+let typeTimer = null;
+
+const nextTypingStep = () => {
+    const phrase = typePhrases[phraseIndex];
+
+    if (!deleting) {
+        charIndex += 1;
+        typedText.value = phrase.slice(0, charIndex);
+
+        if (charIndex >= phrase.length) {
+            deleting = true;
+            typeTimer = setTimeout(nextTypingStep, 1900);
+            return;
+        }
+
+        typeTimer = setTimeout(nextTypingStep, 68 + Math.random() * 42);
+        return;
+    }
+
+    charIndex -= 1;
+    typedText.value = phrase.slice(0, Math.max(charIndex, 0));
+
+    if (charIndex <= 0) {
+        deleting = false;
+        phraseIndex = (phraseIndex + 1) % typePhrases.length;
+        typeTimer = setTimeout(nextTypingStep, 420);
+        return;
+    }
+
+    typeTimer = setTimeout(nextTypingStep, 36);
+};
+
+const startTyping = () => {
+    if (reduceMotion()) {
+        typedText.value = typePhrases[0];
+        return;
+    }
+
+    typeTimer = setTimeout(nextTypingStep, 1250);
+};
+
 // ─── Animasi ────────────────────────────────────────────
 let observer = null;
 const reduceMotion = () =>
@@ -268,6 +315,7 @@ onMounted(() => {
 
     if (reduceMotion()) {
         revealAll();
+        startTyping();
         counters.value = {
             tables: props.availableNow,
             total: props.totalTables,
@@ -278,9 +326,11 @@ onMounted(() => {
             playHero();
             startCounters();
             observeReveals();
+            startTyping();
         } catch (error) {
             console.warn('Animasi landing dinonaktifkan:', error);
             revealAll();
+            typedText.value = typePhrases[0];
         }
     }
 });
@@ -288,6 +338,7 @@ onMounted(() => {
 onUnmounted(() => {
     rootRef.value?.removeEventListener('scroll', onScroll);
     observer?.disconnect();
+    clearTimeout(typeTimer);
 });
 </script>
 
@@ -379,7 +430,10 @@ onUnmounted(() => {
                     <h1 class="bbp-title" data-hero>
                         Meja siap.
                         <span class="bbp-title__line">Bola siap.</span>
-                        <span class="bbp-title__accent">Giliran kamu.</span>
+                        <span class="bbp-title__accent">
+                            <span aria-hidden="true">{{ typedText }}</span><span class="bbp-caret" aria-hidden="true"></span>
+                            <span class="visually-hidden">Giliran kamu.</span>
+                        </span>
                     </h1>
 
                     <p class="bbp-sub" data-hero>
@@ -1132,6 +1186,8 @@ onUnmounted(() => {
 }
 .bbp-title__accent {
     display: block;
+    min-height: 1.02em;
+    white-space: nowrap;
     background: linear-gradient(100deg, #6ee7b7 0%, #22d3ee 55%, #818cf8 100%);
     -webkit-background-clip: text;
     background-clip: text;
@@ -1144,6 +1200,24 @@ onUnmounted(() => {
     background-clip: text;
     -webkit-text-fill-color: transparent;
     filter: none;
+}
+
+.bbp-caret {
+    display: inline-block;
+    width: 3px;
+    height: 0.82em;
+    margin-left: 0.06em;
+    border-radius: 2px;
+    background: var(--bbp-emerald);
+    vertical-align: -0.04em;
+    animation: bbp-caret 1s steps(1) infinite;
+}
+[data-bs-theme='light'] .bbp-caret {
+    background: #059669;
+}
+@keyframes bbp-caret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
 }
 
 .bbp-sub {
@@ -1943,6 +2017,9 @@ onUnmounted(() => {
         padding: 0.55rem 0.8rem;
         font-size: 0.78rem;
     }
+    .bbp-title {
+        font-size: clamp(1.8rem, 9vw, 2.5rem);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1950,8 +2027,12 @@ onUnmounted(() => {
         scroll-behavior: auto;
     }
     .bbp-marquee__track,
-    .bbp-live {
+    .bbp-live,
+    .bbp-caret {
         animation: none;
+    }
+    .bbp-caret {
+        display: none;
     }
     .bbp-feature,
     .bbp-pack,
