@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Head, Link, usePage } from '@/shims/inertia.js';
 import { animate, stagger } from 'animejs';
 import Logo from '@/Components/Logo.vue';
+import HeroBilliard3D from '@/Components/HeroBilliard3D.vue';
+import LandingAmbient3D from '@/Components/LandingAmbient3D.vue';
 
 const props = defineProps({
     packages: { type: Array, default: () => [] },
@@ -38,13 +40,17 @@ const toggleTheme = () => {
 // ─── Navigasi mobile & scroll state ─────────────────────
 const rootRef = ref(null);
 const scrolled = ref(false);
+const scrollProgress = ref(0);
 const mobileOpen = ref(false);
 const toggleMobile = () => {
     mobileOpen.value = !mobileOpen.value;
 };
 const onScroll = () => {
     if (!rootRef.value) return;
-    scrolled.value = rootRef.value.scrollTop > 24;
+    const el = rootRef.value;
+    scrolled.value = el.scrollTop > 24;
+    const maxScroll = Math.max(1, el.scrollHeight - el.clientHeight);
+    scrollProgress.value = Math.min(1, Math.max(0, el.scrollTop / maxScroll));
 };
 
 // ─── Isi konten ─────────────────────────────────────────
@@ -209,29 +215,37 @@ const playHero = () => {
     });
 
     const balls = root.querySelectorAll('.bbp-ball');
-    animate(balls, {
-        scale: [0, 1],
-        opacity: [0, 1],
-        duration: 850,
-        delay: stagger(70, { start: 420 }),
-        ease: 'outBack',
-    });
+    if (balls.length) {
+        animate(balls, {
+            scale: [0, 1],
+            opacity: [0, 1],
+            duration: 850,
+            delay: stagger(70, { start: 420 }),
+            ease: 'outBack',
+        });
+    }
 
-    animate(root.querySelectorAll('.bbp-dust'), {
-        opacity: [0, 0.7],
-        translateY: [10, -4],
-        duration: 1200,
-        delay: stagger(90, { start: 700 }),
-        ease: 'outQuad',
-    });
+    const dust = root.querySelectorAll('.bbp-dust');
+    if (dust.length) {
+        animate(dust, {
+            opacity: [0, 0.7],
+            translateY: [10, -4],
+            duration: 1200,
+            delay: stagger(90, { start: 700 }),
+            ease: 'outQuad',
+        });
+    }
 
-    animate(root.querySelector('.bbp-cue'), {
-        opacity: [0, 1],
-        translateX: [70, 0],
-        duration: 1000,
-        delay: 260,
-        ease: 'outExpo',
-    });
+    const cue = root.querySelector('.bbp-cue');
+    if (cue) {
+        animate(cue, {
+            opacity: [0, 1],
+            translateX: [70, 0],
+            duration: 1000,
+            delay: 260,
+            ease: 'outExpo',
+        });
+    }
 
     animate(root.querySelectorAll('.bbp-float'), {
         opacity: [0, 1],
@@ -242,32 +256,39 @@ const playHero = () => {
         ease: 'outBack',
     });
 
-    // Gerak idle yang lembut agar ilustrasi terasa hidup.
-    animate(root.querySelectorAll('.bbp-ball'), {
-        translateY: [-2.5, 2.5],
-        duration: 2600,
-        loop: true,
-        alternate: true,
-        delay: stagger(160, { start: 1600 }),
-        ease: 'inOutSine',
-    });
+    // Gerak idle yang lembut agar ilustrasi SVG fallback terasa hidup.
+    if (balls.length) {
+        animate(balls, {
+            translateY: [-2.5, 2.5],
+            duration: 2600,
+            loop: true,
+            alternate: true,
+            delay: stagger(160, { start: 1600 }),
+            ease: 'inOutSine',
+        });
+    }
 
-    animate(root.querySelector('.bbp-aim'), {
-        rotate: 360,
-        duration: 16000,
-        loop: true,
-        ease: 'linear',
-        delay: 1400,
-    });
+    const aim = root.querySelector('.bbp-aim');
+    if (aim) {
+        animate(aim, {
+            rotate: 360,
+            duration: 16000,
+            loop: true,
+            ease: 'linear',
+            delay: 1400,
+        });
+    }
 
-    animate(root.querySelector('.bbp-cue'), {
-        translateX: [-5, 5],
-        duration: 2200,
-        loop: true,
-        alternate: true,
-        delay: 1500,
-        ease: 'inOutQuad',
-    });
+    if (cue) {
+        animate(cue, {
+            translateX: [-5, 5],
+            duration: 2200,
+            loop: true,
+            alternate: true,
+            delay: 1500,
+            ease: 'inOutQuad',
+        });
+    }
 
     animate(root.querySelectorAll('.bbp-float'), {
         translateY: [-5, 5],
@@ -353,6 +374,7 @@ onUnmounted(() => {
             <span class="bbp-orb bbp-orb--cyan"></span>
             <span class="bbp-grid"></span>
         </div>
+        <LandingAmbient3D :is-dark="isDark" :scroll-progress="scrollProgress" />
 
         <!-- Navbar -->
         <header class="bbp-nav" :class="{ 'is-scrolled': scrolled }">
@@ -478,6 +500,8 @@ onUnmounted(() => {
 
                 <div class="bbp-hero__art">
                     <div class="bbp-table" data-hero>
+                        <HeroBilliard3D :is-dark="isDark" :scroll-progress="scrollProgress">
+                            <template #fallback>
                         <svg class="bbp-svg" viewBox="0 0 560 440" role="img" aria-label="Meja biliar dengan bola dan stik">
                             <defs>
                                 <linearGradient id="bbpFelt" x1="0" y1="0" x2="0" y2="1">
@@ -593,6 +617,8 @@ onUnmounted(() => {
                                 </g>
                             </g>
                         </svg>
+                            </template>
+                        </HeroBilliard3D>
 
                         <div class="bbp-float bbp-float--a">
                             <span class="bbp-float__icon bbp-float__icon--emerald">
