@@ -5,13 +5,13 @@ class MailService
 {
     public static function driver(): string
     {
-        return (string) credentials('mail.driver', 'log');
+        return env_required('MAIL_DRIVER');
     }
 
     public static function send(string $to, string $subject, string $body): void
     {
-        $from = (string) credentials('mail.from', 'no-reply@poolstream.test');
-        $fromName = (string) credentials('mail.from_name', APP_NAME);
+        $from = env_required('MAIL_FROM');
+        $fromName = env_required('MAIL_FROM_NAME');
         $driver = self::driver();
 
         if ($driver === 'smtp') {
@@ -37,25 +37,24 @@ class MailService
 
     private static function sendSmtp(string $to, string $subject, string $body, string $from, string $fromName): void
     {
-        $smtp = credentials('mail.smtp', []);
-        $host = trim((string) ($smtp['host'] ?? 'smtp.gmail.com'));
-        $port = (int) ($smtp['port'] ?? 587);
-        $encryption = strtolower(trim((string) ($smtp['encryption'] ?? 'tls')));
-        $username = trim((string) ($smtp['username'] ?? ''));
-        $password = (string) ($smtp['password'] ?? '');
+        $host = trim(env_required('MAIL_HOST'));
+        $port = env_int('MAIL_PORT');
+        $encryption = strtolower(trim(env_required('MAIL_ENCRYPTION')));
+        $username = trim(env_required('MAIL_USERNAME'));
+        $password = env_required('MAIL_PASSWORD');
         if (str_contains(strtolower($host), 'gmail.com')) {
             $password = str_replace(' ', '', $password);
         }
-        $timeout = (int) ($smtp['timeout'] ?? 15);
+        $timeout = env_int('MAIL_TIMEOUT');
 
         if ($host === '' || $port <= 0) {
-            throw new RuntimeException('Konfigurasi SMTP host/port tidak valid.');
+            throw new RuntimeException('Konfigurasi MAIL_HOST/MAIL_PORT di .env tidak valid.');
         }
 
-        $effectiveFrom = self::isValidEmail($from) ? $from : $username;
-        if (!self::isValidEmail($effectiveFrom)) {
-            throw new RuntimeException('Alamat email pengirim (mail.from / mail.smtp.username) tidak valid.');
+        if (!self::isValidEmail($from)) {
+            throw new RuntimeException('Alamat MAIL_FROM di .env tidak valid.');
         }
+        $effectiveFrom = $from;
 
         $transport = $encryption === 'ssl' ? "ssl://{$host}:{$port}" : "tcp://{$host}:{$port}";
         $errno = 0;

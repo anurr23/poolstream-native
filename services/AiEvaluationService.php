@@ -26,16 +26,16 @@ class AiEvaluationService
         $payload = $this->reportData->build($start, $end, $evaluation['sections'] ?? [], $bucket, $includeSample);
         $model->update($evaluationId, [
             'bucket' => $bucket,
-            'model' => (string) credentials('ai.model', ''),
+            'model' => env_required('AI_MODEL'),
             'payload' => $payload,
         ]);
 
         [$system, $user] = $this->prompts($payload);
-        $baseUrl = rtrim((string) credentials('ai.base_url', 'http://127.0.0.1:20128/v1'), '/');
-        $apiKey = (string) credentials('ai.api_key', '');
-        $aiModel = (string) credentials('ai.model', 'ag/gemini-3.8-flash-high');
-        $timeout = (int) credentials('ai.timeout', 0);
-        $maxTokens = (int) credentials('ai.max_tokens', 16384);
+        $baseUrl = rtrim(env_required('AI_BASE_URL'), '/');
+        $apiKey = env_required('AI_API_KEY');
+        $aiModel = env_required('AI_MODEL');
+        $timeout = env_int('AI_TIMEOUT');
+        $maxTokens = env_int('AI_MAX_TOKENS');
 
         $body = json_encode([
             'model' => $aiModel,

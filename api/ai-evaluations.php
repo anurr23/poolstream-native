@@ -90,7 +90,7 @@ api_handle(function (): void {
             'end_date' => $end,
             'bucket' => (new ReportDataService())->bucketFor($start, $end),
             'sections' => $sections,
-            'model' => (string) credentials('ai.model', ''),
+            'model' => env_required('AI_MODEL'),
             'payload' => [
                 'opsi' => [
                     'sertakan_sampel' => request_bool($input['include_sample'] ?? false),

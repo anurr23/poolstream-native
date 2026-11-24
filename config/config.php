@@ -5,38 +5,17 @@ declare(strict_types=1);
  * PoolStream Native
  * -----------------------------------------------------------------------------
  * Bootstrap aplikasi PHP native (tanpa framework) dengan frontend Vue 3.
- * Semua konfigurasi kredensial ada di config/credentials.php (gitignored).
+ * Semua konfigurasi dibaca dari file .env di root project.
  */
 
-define('APP_NAME', 'PoolStream');
 define('APP_ROOT', dirname(__DIR__));
 
-date_default_timezone_set('Asia/Jakarta');
+require_once __DIR__ . '/env.php';
+env_load(APP_ROOT . '/.env');
 
-// -----------------------------------------------------------------------------
-// Credentials
-// -----------------------------------------------------------------------------
-$credentialsFile = __DIR__ . '/credentials.php';
-$GLOBALS['poolstream_credentials'] = is_file($credentialsFile)
-    ? require $credentialsFile
-    : [];
+define('APP_NAME', env_required('APP_NAME'));
 
-function credentials(?string $path = null, mixed $default = null): mixed
-{
-    $data = $GLOBALS['poolstream_credentials'] ?? [];
-    if ($path === null) {
-        return $data;
-    }
-
-    foreach (explode('.', $path) as $segment) {
-        if (!is_array($data) || !array_key_exists($segment, $data)) {
-            return $default;
-        }
-        $data = $data[$segment];
-    }
-
-    return $data;
-}
+date_default_timezone_set(env_required('APP_TIMEZONE'));
 
 // -----------------------------------------------------------------------------
 // Base URL (mendukung subfolder, mis. /poolstream-native/)
@@ -416,13 +395,13 @@ function render_page(string $component, array $props = [], string $title = 'Pool
 
 function APP_DEBUG_VALUE(): bool
 {
-    return (bool) credentials('app.debug', true);
+    return env_bool('APP_DEBUG');
 }
 
 define('APP_DEBUG', APP_DEBUG_VALUE());
 
 function google_oauth_configured(): bool
 {
-    return (string) credentials('google.client_id', '') !== ''
-        && (string) credentials('google.client_secret', '') !== '';
+    return (string) env('GOOGLE_CLIENT_ID') !== ''
+        && (string) env('GOOGLE_CLIENT_SECRET') !== '';
 }

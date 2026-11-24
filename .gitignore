@@ -1,6 +1,4 @@
-config/credentials.php
 storage/receipts/
-config/database.local.php
 .agents
 *.log
 .DS_Store

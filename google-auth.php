@@ -53,9 +53,9 @@ if (!google_oauth_configured()) {
     redirect('login.php');
 }
 
-$clientId = (string) credentials('google.client_id', '');
-$clientSecret = (string) credentials('google.client_secret', '');
-$redirectUri = (string) credentials('google.redirect', '');
+$clientId = env_required('GOOGLE_CLIENT_ID');
+$clientSecret = env_required('GOOGLE_CLIENT_SECRET');
+$redirectUri = env_required('GOOGLE_REDIRECT');
 
 if ($action === 'redirect') {
     $state = bin2hex(random_bytes(24));

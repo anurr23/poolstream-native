@@ -6,21 +6,51 @@ dan frontend **Vue 3** (Vite). Struktur halaman mengikuti project `poolstream` (
 
 ## Menjalankan
 
-1. Salin `config/credentials.example.php` menjadi `config/credentials.php` lalu sesuaikan nilainya:
-   ```php
-   <?php
-   return [
-       'app' => ['debug' => true],
-       'db' => ['host' => 'host.docker.internal', 'port' => '3306', 'name' => 'poolstream', 'user' => 'root', 'pass' => 'root123'],
-       'google' => ['client_id' => '', 'client_secret' => '', 'redirect' => 'http://localhost/poolstream-native/google-auth.php?action=callback'],
-       'ai' => ['base_url' => 'http://host.docker.internal:20128/v1', 'api_key' => '', 'model' => 'ag/gemini-3.8-flash-high', 'timeout' => 0, 'max_tokens' => 16384],
-       'mail' => ['driver' => 'smtp', 'from' => 'emailanda@gmail.com', 'from_name' => 'PoolStream', 'smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'encryption' => 'tls', 'username' => 'emailanda@gmail.com', 'password' => 'APP_PASSWORD']],
-   ];
+1. Salin `.env.example` menjadi `.env`, lalu sesuaikan nilainya:
+   ```env
+   APP_NAME=PoolStream
+   APP_DEBUG=true
+   APP_TIMEZONE=Asia/Jakarta
+
+   DB_HOST=host.docker.internal
+   DB_PORT=3306
+   DB_NAME=poolstream
+   DB_USER=root
+   DB_PASSWORD=your_password
+   DB_TIMEZONE=+07:00
+   DB_TIMEOUT=3
+
+   GOOGLE_CLIENT_ID=
+   GOOGLE_CLIENT_SECRET=
+   GOOGLE_REDIRECT=http://localhost/poolstream-native/google-auth.php?action=callback
+
+   AI_BASE_URL=http://host.docker.internal:20128/v1
+   AI_API_KEY=
+   AI_MODEL=ag/gemini-3.8-flash-high
+   AI_TIMEOUT=0
+   AI_MAX_TOKENS=16384
+
+   MAIL_DRIVER=smtp
+   MAIL_FROM=emailanda@gmail.com
+   MAIL_FROM_NAME=PoolStream
+   MAIL_HOST=smtp.gmail.com
+   MAIL_PORT=587
+   MAIL_ENCRYPTION=tls
+   MAIL_USERNAME=emailanda@gmail.com
+   MAIL_PASSWORD=APP_PASSWORD
+   MAIL_TIMEOUT=15
    ```
-2. `composer install` (Dompdf untuk PDF Evaluasi AI)
-3. `npm install`
-4. `npm run build`
-5. Buka `http://localhost/poolstream-native/`
+   Semua konfigurasi dibaca langsung dari `.env` tanpa fallback.
+2. Jalankan installer database (paling mudah):
+   - Buka `http://localhost/poolstream-native/install.php`, lalu klik **Install / Migrate**.
+   - Atau lewat terminal: `php install.php`
+   - Alternatif import SQL manual: `mysql -u root -p < database/poolstream_full.sql`
+
+   Detail ada di `database/README.md`.
+3. `composer install` (Dompdf untuk PDF Evaluasi AI)
+4. `npm install`
+5. `npm run build`
+6. Buka `http://localhost/poolstream-native/`
 
 ## Scheduler
 

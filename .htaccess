@@ -1,0 +1,10 @@
+# Blokir akses langsung ke file konfigurasi/rahasia.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(config|database|models|services|scripts|vendor)/ - [F,L]
+    RewriteRule ^storage/(logs|theme_script\.html) - [F,L]
+</IfModule>
