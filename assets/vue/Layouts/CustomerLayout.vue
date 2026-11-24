@@ -233,6 +233,19 @@ onMounted(() => {
     background: var(--bs-body-bg);
 }
 
+/* Dark theme: samakan keluarga warna latar dengan bottom nav (navy slate) */
+[data-bs-theme="dark"] .bb-customer {
+    /* Permukaan card: navy yang lebih segar & terang, bukan abu kusam */
+    --bs-tertiary-bg: #21304d;
+    --bs-secondary-bg: #27395a;
+    --bs-border-color-translucent: rgba(148, 163, 184, 0.22);
+    --bs-border-color: rgba(148, 163, 184, 0.3);
+
+    background:
+        radial-gradient(120% 55% at 50% -15%, rgba(34, 211, 238, 0.1), rgba(34, 211, 238, 0) 62%),
+        linear-gradient(180deg, #0f172a 0%, #0c1424 45%, #090f1b 100%);
+}
+
 .bb-customer-header {
     position: sticky;
     top: 0;
@@ -244,6 +257,13 @@ onMounted(() => {
     padding: 0.7rem 1rem;
     background: var(--bs-body-bg);
     border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+[data-bs-theme="dark"] .bb-customer-header {
+    background: rgba(15, 23, 42, 0.82);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    border-bottom-color: rgba(148, 163, 184, 0.16);
 }
 
 .bb-customer-brand {
@@ -318,13 +338,19 @@ onMounted(() => {
     margin: 0 auto;
     padding: 0.45rem 0.55rem;
     border-radius: 1.4rem;
-    background: #0f172a;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.35);
+    background: linear-gradient(180deg, #16233a, #101a2d);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow:
+        0 18px 40px -8px rgba(2, 6, 23, 0.85),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 [data-bs-theme="light"] .bb-customer-nav__inner {
     background: #ffffff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     border-color: rgba(0, 0, 0, 0.12);
     box-shadow: 0 16px 36px -4px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
 }
